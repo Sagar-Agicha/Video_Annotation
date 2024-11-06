@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOLO Annotation Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f5f7fa;
+        }
+
+        .panel {
+            background-color: white;
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .upload-label {
+            background-color: #f8f9fa;
+            border: 2px dashed #dee2e6;
+            transition: all 0.3s ease;
+        }
+
+        .upload-label:hover {
+            background-color: #e9ecef;
+            border-color: #adb5bd;
+        }
+
+        .nav-btn {
+            background-color: #4a90e2;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+        }
+
+        .nav-btn:hover {
+            background-color: #357abd;
+        }
+
+        .clear-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+
+        .clear-btn:hover {
+            background-color: #c82333;
+        }
+
+        .train-btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+
+        .train-btn:hover {
+            background-color: #218838;
+        }
+
+        #annotationTable {
+            background-color: white;
+            border-collapse: collapse;
+        }
+
+        #annotationTable th {
+            background-color: #f8f9fa;
+            color: #495057;
+        }
+
+        #annotationTable td, #annotationTable th {
+            border: 1px solid #dee2e6;
+        }
+
+        .popup {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .popup-content {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        #confirmClass {
+            background-color: #28a745;
+            color: white;
+        }
+
+        #cancelAnnotation {
+            background-color: #6c757d;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <!-- Left Section -->
+        <div id="left-section">
+            <div class="panel upload-section">
+                <h3>Upload Files</h3>
+                <div class="upload-buttons">
+                    <div class="upload-item">
+                        <label class="upload-label" for="imageUpload">
+                            <i class="icon">📷</i>
+                            <span>Image Upload</span>
+                            <input type="file" id="imageUpload" accept="image/*" multiple style="display: none;"/>
+                        </label>
+                    </div>
+                    <div class="upload-item">
+                        <label class="upload-label" for="videoUpload">
+                            <i class="icon">🎥</i>
+                            <span>Video Upload</span>
+                            <input type="file" id="videoUpload" accept="video/*" style="display: none;"/>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Section -->
+        <div id="center-section">
+            <div class="panel canvas-section">
+                <h2>Image Annotation</h2>
+                <div id="canvas-container">
+                    <canvas id="canvas"></canvas>
+                </div>
+                <div id="classPopup" class="popup">
+                    <div class="popup-content">
+                        <h3>Select Class</h3>
+                        <input type="text" id="className" placeholder="Enter class name" list="existingClasses">
+                        <datalist id="existingClasses">
+                            <!-- Will be populated dynamically -->
+                        </datalist>
+                        <div class="popup-buttons">
+                            <button id="confirmClass">Confirm</button>
+                            <button id="cancelAnnotation">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="navigation-controls">
+                    <button id="prevImage" class="nav-btn">◀ Previous</button>
+                    <span id="imageCounter">Image 0 of 0</span>
+                    <button id="nextImage" class="nav-btn">Next ▶</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Section -->
+        <div id="right-section">
+            <div class="panel annotation-list">
+                <h3>Annotations</h3>
+                <div class="annotation-container">
+                    <table id="annotationTable">
+                        <thead>
+                            <tr>
+                                <th>Class</th>
+                                <th>Coordinates</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="annotationsList">
+                            <!-- Annotations will be added here dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="control-panel">
+                    <div class="left-controls">
+                        <button id="clearAnnotations" class="clear-btn" title="Clear all annotations from all images">
+                            Clear All Annotations
+                        </button>
+                    </div>
+                    <div class="right-controls">
+                        <button id="startTraining" class="train-btn">Start Training</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize the application
+            initializeApp();
+        });
+    </script>
+</body>
+</html> 

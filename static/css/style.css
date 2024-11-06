@@ -1,0 +1,545 @@
+/* Base Styles */
+body {
+    margin: 0;
+    padding: 20px;
+    font-family: 'Roboto', sans-serif;
+    background-color: #1a1a2e;
+    color: #000000;
+}
+
+/* Container Layout */
+#container {
+    display: grid;
+    grid-template-columns: 250px 1fr 300px;
+    gap: 20px;
+    max-width: 1600px;
+    margin: 0 auto;
+    height: calc(100vh - 40px);
+}
+
+/* Panel Styling */
+.panel {
+    background: #16213e;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    padding: 20px;
+    height: fit-content;
+}
+
+/* Upload Section */
+.upload-section {
+    height: auto;
+}
+
+.upload-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.upload-item {
+    width: 100%;
+}
+
+.upload-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    border: 2px dashed #394867;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background-color: #1f2937;
+    color: #e6e6e6;
+}
+
+.upload-label:hover {
+    border-color: #0ea5e9;
+    background-color: #2d3748;
+}
+
+.upload-label input {
+    display: none;
+}
+
+.upload-label span {
+    margin-top: 8px;
+    font-size: 14px;
+    color: #000000;
+}
+
+/* Add visual feedback for active state */
+.upload-label:active {
+    transform: scale(0.98);
+}
+
+.icon {
+    font-size: 24px;
+    margin-bottom: 10px;
+}
+
+/* Canvas Section */
+.canvas-section {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+#canvas-container {
+    flex: 1;
+    position: relative;
+    margin: 10px;
+    background-color: #1f2937;
+    border: 1px solid #394867;
+}
+
+canvas {
+    display: block;
+    background-color: #2a3649;
+}
+
+/* Navigation Controls */
+.navigation-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-top: 20px;
+    padding: 10px;
+    text-align: center;
+}
+
+.nav-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background-color: #0ea5e9;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.nav-btn:hover {
+    background-color: #0284c7;
+}
+
+.nav-btn:disabled {
+    background-color: #475569;
+    cursor: not-allowed;
+}
+
+#imageCounter {
+    font-weight: 500;
+    color: #000000;
+}
+
+/* Annotation List */
+.annotation-list {
+    margin-bottom: 60px;
+    overflow-y: auto;
+    max-height: calc(100vh - 200px);
+}
+
+#annotationTable {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+#annotationTable th,
+#annotationTable td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid #394867;
+    font-size: 14px;
+}
+
+#annotationTable th {
+    background-color: #ffffff;
+    font-weight: bold;
+    color: #000000;
+}
+
+.action-btn {
+    padding: 5px;
+    margin: 0 2px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    background: none;
+    transition: all 0.2s;
+}
+
+.edit-btn i {
+    color: #4CAF50;
+}
+
+.delete-btn i {
+    color: #f44336;
+}
+
+.action-btn:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Add this if you want to use Font Awesome icons */
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css');
+
+.annotation-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 15px 0;
+}
+
+.annotation-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: #1f2937;
+    border-radius: 6px;
+    transition: transform 0.2s ease;
+    color: #000000;
+}
+
+.annotation-item:hover {
+    transform: translateX(5px);
+}
+
+.annotation-label {
+    font-weight: 500;
+    color: #000000;
+}
+
+.annotation-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.edit-btn, .delete-btn {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.edit-btn {
+    background: #059669;
+    color: white;
+}
+
+.edit-btn:hover {
+    background: #047857;
+}
+
+.delete-btn {
+    background: #dc2626;
+    color: white;
+}
+
+.delete-btn:hover {
+    background: #b91c1c;
+}
+
+/* Save Button */
+.save-btn {
+    width: 100%;
+    padding: 12px;
+    background: #4299e1;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    margin-top: 15px;
+}
+
+.save-btn:hover {
+    background: #3182ce;
+}
+
+/* Headings */
+h2, h3 {
+    margin-top: 0;
+    color: #000000;
+    font-weight: 500;
+}
+
+h2 {
+    font-size: 1.5rem;
+    margin-bottom: 20px;
+}
+
+h3 {
+    font-size: 1.2rem;
+    margin-bottom: 15px;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1f2937;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #394867;
+    border-radius: 4px;
+}
+
+.popup {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.popup-content {
+    background-color: #1f2937;
+    color: #000000;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    width: 300px;
+    max-width: 90%;
+}
+
+.popup h3 {
+    margin: 0 0 15px 0;
+    color: #000000;
+    font-size: 18px;
+    text-align: center;
+}
+
+.popup input {
+    width: calc(100% - 20px);
+    padding: 8px;
+    margin: 10px 0;
+    border: 1px solid #4b5563;
+    border-radius: 4px;
+    font-size: 14px;
+    background-color: #374151;
+    color: #000000;
+}
+
+.popup-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 15px;
+    gap: 10px;
+}
+
+.popup-buttons button {
+    flex: 1;
+    padding: 8px 15px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+#confirmClass {
+    background-color: #059669;
+    color: white;
+}
+
+#confirmClass:hover {
+    background-color: #047857;
+}
+
+#cancelAnnotation {
+    background-color: #dc2626;
+    color: white;
+}
+
+#cancelAnnotation:hover {
+    background-color: #b91c1c;
+}
+
+.annotation-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+#annotationTable {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#annotationTable th,
+#annotationTable td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid #394867;
+}
+
+.action-btn {
+    margin: 0 5px;
+    padding: 3px 8px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.edit-btn {
+    background-color: #059669;
+    color: white;
+}
+
+.delete-btn {
+    background-color: #dc2626;
+    color: white;
+}
+
+#uploadProgress {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 20px;
+    border-radius: 5px;
+    z-index: 1000;
+}
+
+.upload-label {
+    cursor: pointer;
+    padding: 10px;
+    background: #f0f0f0;
+    border-radius: 5px;
+    display: inline-block;
+    margin: 5px;
+}
+
+.upload-label:hover {
+    background: #e0e0e0;
+}
+
+.train-btn {
+    background-color: #059669;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 10px;
+}
+
+.train-btn:hover {
+    background-color: #047857;
+}
+
+#trainingProgress {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 20px;
+    border-radius: 5px;
+    z-index: 1000;
+}
+
+/* Update control panel styles */
+.control-panel {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    background-color: #1f2937;
+    border-top: 1px solid #394867;
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    width: 300px;
+}
+
+.left-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.right-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.clear-btn {
+    background-color: #dc2626;
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.clear-btn:hover {
+    background-color: #b91c1c;
+}
+
+.train-btn {
+    background-color: #059669;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 14px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.train-btn:hover {
+    background-color: #047857;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+}
+
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px 25px;
+    border-radius: 4px;
+    color: white;
+    animation: slideIn 0.3s ease-out;
+    z-index: 1000;
+}
+
+.notification.success {
+    background-color: #059669;
+}
+
+.notification.error {
+    background-color: #dc2626;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+} 
