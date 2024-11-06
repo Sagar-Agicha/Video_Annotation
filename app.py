@@ -15,6 +15,7 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'static/uploads'
 VIDEO_FOLDER = 'static/videos'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4', 'avi', 'mov', 'wmv'}
+print("ALLOWED_EXTENSIONS: ", ALLOWED_EXTENSIONS)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['VIDEO_FOLDER'] = VIDEO_FOLDER
