@@ -19,6 +19,9 @@ let tempAnnotation = null;
 const CANVAS_CONTAINER_WIDTH = 800;
 const CANVAS_CONTAINER_HEIGHT = 600;
 
+let selectedVideoFile = null;
+let uploadedVideoFilename = null;
+
 function initializeApp() {
     loadImages();
     
@@ -456,40 +459,26 @@ function setupVideoUpload() {
     videoUpload.addEventListener('change', uploadVideo);
 }
 
-async function uploadVideo(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    // Show loading indicator
-    const loadingDiv = document.createElement('div');
-    loadingDiv.id = 'uploadProgress';
-    loadingDiv.innerHTML = 'Uploading video...';
-    document.body.appendChild(loadingDiv);
-
+async function uploadVideo(file) {
     const formData = new FormData();
     formData.append('video', file);
-
+    
     try {
         const response = await fetch('/upload_video', {
             method: 'POST',
             body: formData
         });
-
-        const result = await response.json();
         
-        if (response.ok) {
-            alert('Video uploaded successfully!');
+        const result = await response.json();
+        if (result.success) {
+            uploadedVideoFilename = result.filename;
+            alert('Video uploaded successfully! Click "Process Video" to extract frames.');
         } else {
-            alert('Error uploading video: ' + result.error);
+            alert('Error uploading video: ' + (result.error || 'Unknown error'));
         }
     } catch (error) {
-        console.error('Error:', error);
-        alert('Error uploading video');
-    } finally {
-        // Remove loading indicator
-        document.body.removeChild(loadingDiv);
-        // Reset file input
-        e.target.value = '';
+        console.error('Error uploading video:', error);
+        alert('Error uploading video. Please try again.');
     }
 }
 
@@ -694,3 +683,67 @@ document.querySelector('.clear-btn').style.cssText = `
     font-weight: bold;
     transition: all 0.3s ease;
 `;
+
+// Add this to your existing JavaScript
+document.getElementById('videoUpload').addEventListener('change', function(e) {
+    const videoUploadControls = document.getElementById('videoUploadControls');
+    if (e.target.files.length > 0) {
+        selectedVideoFile = e.target.files[0];
+        videoUploadControls.style.display = 'block';
+        // Upload the video immediately
+        uploadVideo(selectedVideoFile);
+    } else {
+        selectedVideoFile = null;
+        uploadedVideoFilename = null;
+        videoUploadControls.style.display = 'none';
+    }
+});
+
+document.getElementById('processVideoBtn').addEventListener('click', async function() {
+    if (!uploadedVideoFilename) {
+        alert('Please upload a video first');
+        return;
+    }
+
+    const frameCount = document.getElementById('frameCount').value;
+    if (frameCount < 1) {
+        alert('Please enter a valid number of frames');
+        return;
+    }
+
+    // Show loading state
+    const btn = this;
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = 'Processing...';
+
+    try {
+        const response = await fetch('/process_video', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                filename: uploadedVideoFilename,
+                frame_count: parseInt(frameCount)
+            })
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(`Video processed successfully! Extracted ${result.frames_extracted} frames.`);
+            // Optionally refresh the image gallery or update UI
+            loadImages(); // Assuming you have this function to refresh images
+        } else {
+            alert('Error: ' + (result.error || 'Failed to process video'));
+        }
+    } catch (error) {
+        console.error('Error processing video:', error);
+        alert('Error processing video. Please try again.');
+    } finally {
+        // Reset button state
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+});

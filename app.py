@@ -107,13 +107,9 @@ def upload_video():
             video_path = os.path.join(app.config['VIDEO_FOLDER'], filename)
             video.save(video_path)
             
-            # Process video frames
-            output_dir = os.path.join(app.config['UPLOAD_FOLDER'])
-            extract_frames(video_path, output_dir, skip_frames=100)
-
             return jsonify({
                 'success': True,
-                'message': 'Video uploaded and processed successfully',
+                'message': 'Video uploaded successfully.',
                 'filename': filename
             })
         except Exception as e:
@@ -121,8 +117,30 @@ def upload_video():
     
     return jsonify({'error': 'Invalid video format'}), 400
 
-def extract_frames(video_path, output_dir, skip_frames=1):
-    """Extract frames from video with custom skip rate"""
+@app.route('/process_video', methods=['POST'])
+def process_video():
+    try:
+        data = request.json
+        filename = data.get('filename')
+        skip_frames = int(data.get('frame_count', 2))  # This will now be used directly as skip interval
+        
+        video_path = os.path.join(app.config['VIDEO_FOLDER'], filename)
+        if not os.path.exists(video_path):
+            return jsonify({'error': 'Video file not found'}), 404
+            
+        output_dir = os.path.join(app.config['UPLOAD_FOLDER'])
+        extracted_frames = extract_frames(video_path, output_dir, skip_frames=skip_frames)
+
+        return jsonify({
+            'success': True,
+            'message': f'Video processed successfully. Extracted {extracted_frames} frames by skipping every {skip_frames} frames.',
+            'frames_extracted': extracted_frames
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def extract_frames(video_path, output_dir, skip_frames=2):
+    """Extract frames from video by skipping specified number of frames"""
     video_name = Path(video_path).stem
     cap = cv2.VideoCapture(video_path)
     
@@ -137,6 +155,7 @@ def extract_frames(video_path, output_dir, skip_frames=1):
         if not ret:
             break
             
+        # Save frame if it's at the skip interval
         if frame_count % skip_frames == 0:
             frame_filename = os.path.join(output_dir, f"{video_name}_frame_{saved_count:06d}.jpg")
             cv2.imwrite(frame_filename, frame)

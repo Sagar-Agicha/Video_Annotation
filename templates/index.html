@@ -100,6 +100,32 @@
             background-color: #6c757d;
             color: white;
         }
+
+        .frame-input {
+            margin-top: 10px;
+            padding: 5px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            width: 100px;
+        }
+
+        #frameCountContainer {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        #videoUploadControls {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .frame-input-container {
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -122,6 +148,13 @@
                             <span>Video Upload</span>
                             <input type="file" id="videoUpload" accept="video/*" style="display: none;"/>
                         </label>
+                        <div id="videoUploadControls" style="display: none;">
+                            <div class="frame-input-container">
+                                <label for="frameCount">Skip frames interval (e.g., 2 means save every 2nd frame):</label>
+                                <input type="number" id="frameCount" min="1" value="2" class="frame-input">
+                            </div>
+                            <button id="processVideoBtn" class="btn btn-primary mt-2">Extract Frames</button>
+                        </div>
                     </div>
                 </div>
             </div>
