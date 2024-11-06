@@ -22,6 +22,11 @@ const CANVAS_CONTAINER_HEIGHT = 600;
 let selectedVideoFile = null;
 let uploadedVideoFilename = null;
 
+let canvasScale = {
+    x: 1,
+    y: 1
+};
+
 function initializeApp() {
     loadImages();
     
@@ -59,39 +64,90 @@ async function uploadImages(e) {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    // First save current annotations if there's a current image
+    if (currentImageIndex !== null && images[currentImageIndex]) {
+        await saveAnnotationsToFile(currentImageIndex);
+    }
+
     const formData = new FormData();
     for (let file of files) {
         formData.append('files[]', file);
     }
-    
+
     try {
         const response = await fetch('/upload', {
             method: 'POST',
             body: formData
         });
-        
+
         if (response.ok) {
-            // Reload images after successful upload
-            await loadImages();
-            // Reset the file input
-            e.target.value = '';
+            const result = await response.json();
+            if (result.success) {
+                // Keep track of current annotations
+                const existingAnnotations = [...images];
+                
+                // Reload all images
+                await loadImages();
+                
+                // Restore annotations for existing images
+                images = images.map(newImage => {
+                    const existingImage = existingAnnotations.find(img => img.name === newImage.name);
+                    if (existingImage && existingImage.annotations) {
+                        return {
+                            ...newImage,
+                            annotations: existingImage.annotations
+                        };
+                    }
+                    return newImage;
+                });
+
+                // Update display
+                displayImage(currentImageIndex);
+            }
         } else {
             console.error('Upload failed');
         }
     } catch (error) {
         console.error('Error uploading files:', error);
     }
+
+    // Reset file input
+    e.target.value = '';
 }
 
 async function loadImages() {
     try {
         const response = await fetch('/get_images');
         const data = await response.json();
-        images = data.images;
-        updateImageCounter();
+        
+        // Load annotations for each image
+        const loadedImages = await Promise.all(data.images.map(async (img) => {
+            try {
+                const annotationResponse = await fetch(`/get_annotations/${img.name}`);
+                const annotationData = await annotationResponse.json();
+                return {
+                    ...img,
+                    annotations: annotationData.annotations || []
+                };
+            } catch (error) {
+                console.error(`Error loading annotations for ${img.name}:`, error);
+                return {
+                    ...img,
+                    annotations: []
+                };
+            }
+        }));
+
+        images = loadedImages;
+        
         if (images.length > 0) {
+            if (currentImageIndex === null || currentImageIndex >= images.length) {
+                currentImageIndex = 0;
+            }
             displayImage(currentImageIndex);
         }
+        
+        updateImageCounter();
     } catch (error) {
         console.error('Error loading images:', error);
     }
@@ -133,21 +189,36 @@ function setupEventListeners() {
 function startDrawing(e) {
     isDrawing = true;
     const rect = canvas.getBoundingClientRect();
-    startX = e.clientX - rect.left;
-    startY = e.clientY - rect.top;
-    currentAnnotation = { x: startX, y: startY, width: 0, height: 0 };
-    drawAnnotations();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    startX = (e.clientX - rect.left) * scaleX;
+    startY = (e.clientY - rect.top) * scaleY;
+    
+    currentAnnotation = {
+        x: startX,
+        y: startY,
+        width: 0,
+        height: 0
+    };
 }
 
 function draw(e) {
     if (!isDrawing) return;
     
     const rect = canvas.getBoundingClientRect();
-    const currentX = e.clientX - rect.left;
-    const currentY = e.clientY - rect.top;
-
-    currentAnnotation.width = currentX - startX;
-    currentAnnotation.height = currentY - startY;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    const currentX = (e.clientX - rect.left) * scaleX;
+    const currentY = (e.clientY - rect.top) * scaleY;
+    
+    currentAnnotation = {
+        x: Math.min(startX, currentX),
+        y: Math.min(startY, currentY),
+        width: Math.abs(currentX - startX),
+        height: Math.abs(currentY - startY)
+    };
     
     drawAnnotations();
 }
@@ -155,8 +226,10 @@ function draw(e) {
 function endDrawing(e) {
     if (!isDrawing) return;
     isDrawing = false;
-
-    if (currentAnnotation && Math.abs(currentAnnotation.width) > 5 && Math.abs(currentAnnotation.height) > 5) {
+    
+    if (currentAnnotation && 
+        currentAnnotation.width > 5 && 
+        currentAnnotation.height > 5) {
         showClassPopup();
     } else {
         currentAnnotation = null;
@@ -165,46 +238,74 @@ function endDrawing(e) {
 }
 
 function showClassPopup() {
+    console.log('Opening popup with currentAnnotation:', currentAnnotation);
     const popup = document.getElementById('classPopup');
-    const className = document.getElementById('className');
-    updateClassList(); // Update the list of existing classes
+    const classInput = document.getElementById('className');
+    
+    if (!popup || !classInput) {
+        console.error('Required popup elements not found');
+        return;
+    }
+    
     popup.style.display = 'flex';
-    className.value = '';
-    className.focus();
+    classInput.value = '';
+    classInput.focus();
 }
 
-function saveAnnotation() {
-    const className = document.getElementById('className').value.trim();
-    if (!className || !currentAnnotation) return;
+function hideClassPopup() {
+    const popup = document.getElementById('classPopup');
+    const classInput = document.getElementById('className');
+    
+    if (popup) {
+        popup.style.display = 'none';
+    }
+    if (classInput) {
+        classInput.value = '';
+    }
+}
+
+function saveAnnotation(className) {
+    console.log('Attempting to save annotation:', { className, currentAnnotation });
+    
+    if (!currentAnnotation) {
+        console.error('No current annotation to save');
+        return;
+    }
+    
+    if (typeof className !== 'string' || !className) {
+        console.error('Invalid class name:', className);
+        return;
+    }
 
     const canvas = document.getElementById('canvas');
     
-    // Convert to YOLO format (normalized coordinates)
-    const x = Math.min(currentAnnotation.x, currentAnnotation.x + currentAnnotation.width);
-    const y = Math.min(currentAnnotation.y, currentAnnotation.y + currentAnnotation.height);
-    const width = Math.abs(currentAnnotation.width);
-    const height = Math.abs(currentAnnotation.height);
-
+    // Create the normalized annotation
     const annotation = {
-        x: (x + width/2) / canvas.width,
-        y: (y + height/2) / canvas.height,
-        width: width / canvas.width,
-        height: height / canvas.height,
+        x: currentAnnotation.x / canvas.width,
+        y: currentAnnotation.y / canvas.height,
+        width: currentAnnotation.width / canvas.width,
+        height: currentAnnotation.height / canvas.height,
         class: className
     };
 
+    console.log('Created normalized annotation:', annotation);
+
+    // Initialize annotations array if needed
     if (!images[currentImageIndex].annotations) {
         images[currentImageIndex].annotations = [];
     }
+
+    // Add the annotation
     images[currentImageIndex].annotations.push(annotation);
 
-    // Hide popup and reset current annotation
-    document.getElementById('classPopup').style.display = 'none';
-    currentAnnotation = null;
-    
-    // Update display
-    updateAnnotationsList();
+    // Update display and clean up
+    hideClassPopup();
     drawAnnotations();
+    updateAnnotationsList();
+    saveAnnotationsToFile();
+
+    // Reset current annotation
+    currentAnnotation = null;
 }
 
 function updateAnnotationsList() {
@@ -266,10 +367,11 @@ function drawBox(ctx, box, className = '') {
     let x, y, width, height;
     
     if (box.normalized) {
+        // Convert normalized coordinates to canvas coordinates
         width = box.width * canvasWidth;
         height = box.height * canvasHeight;
-        x = (box.x * canvasWidth) - (width / 2);
-        y = (box.y * canvasHeight) - (height / 2);
+        x = box.x * canvasWidth;
+        y = box.y * canvasHeight;
     } else {
         x = box.x;
         y = box.y;
@@ -277,41 +379,28 @@ function drawBox(ctx, box, className = '') {
         height = box.height;
     }
 
-    // Draw rectangle with gradient stroke
+    // Draw rectangle
     ctx.beginPath();
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2;
     ctx.strokeStyle = '#2196F3';
     ctx.setLineDash([]);
     ctx.rect(x, y, width, height);
     ctx.stroke();
 
-    // Draw class name background
+    // Draw class name if provided
     if (className) {
-        ctx.font = '14px Inter';
+        ctx.font = '14px Arial';
         const textWidth = ctx.measureText(className).width;
-        const textHeight = 20;
-        const padding = 8;
+        const padding = 4;
         
+        // Draw background for text
         ctx.fillStyle = '#2196F3';
-        ctx.fillRect(x - 1, y - textHeight - padding, textWidth + padding * 2, textHeight + padding);
+        ctx.fillRect(x, y - 20, textWidth + (padding * 2), 20);
         
-        // Draw class name text
+        // Draw text
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(className, x + padding, y - padding);
+        ctx.fillText(className, x + padding, y - 5);
     }
-
-    // Draw corner markers
-    const markerSize = 8;
-    ctx.fillStyle = '#2196F3';
-    
-    // Top-left
-    ctx.fillRect(x - markerSize/2, y - markerSize/2, markerSize, markerSize);
-    // Top-right
-    ctx.fillRect(x + width - markerSize/2, y - markerSize/2, markerSize, markerSize);
-    // Bottom-left
-    ctx.fillRect(x - markerSize/2, y + height - markerSize/2, markerSize, markerSize);
-    // Bottom-right
-    ctx.fillRect(x + width - markerSize/2, y + height - markerSize/2, markerSize, markerSize);
 }
 
 function drawAnnotations() {
@@ -324,31 +413,46 @@ function drawAnnotations() {
         ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
     }
 
-    // Draw all saved annotations
+    // Draw existing annotations
     if (images[currentImageIndex].annotations) {
         images[currentImageIndex].annotations.forEach(ann => {
-            drawBox(ctx, { ...ann, normalized: true }, ann.class);
+            const x = ann.x * canvas.width;
+            const y = ann.y * canvas.height;
+            const width = ann.width * canvas.width;
+            const height = ann.height * canvas.height;
+
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, width, height);
+
+            // Draw label
+            ctx.fillStyle = '#00ff00';
+            ctx.font = '14px Arial';
+            ctx.fillText(ann.class, x, y - 5);
         });
     }
 
-    // Draw current annotation if drawing
+    // Draw current annotation if any
     if (currentAnnotation) {
-        drawBox(ctx, currentAnnotation);
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(
+            currentAnnotation.x,
+            currentAnnotation.y,
+            currentAnnotation.width,
+            currentAnnotation.height
+        );
     }
 }
 
-async function displayImage(index) {
+function displayImage(index) {
     if (images.length === 0 || index < 0 || index >= images.length) return;
-    
-    // Load annotations for this image
-    const annotations = await loadAnnotationsForImage(images[index].name);
-    images[index].annotations = annotations;
-    
+
+    const img = new Image();
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const canvasContainer = document.getElementById('canvas-container');
-    
-    const img = new Image();
+
     img.onload = function() {
         currentImage = img;
         
@@ -368,12 +472,18 @@ async function displayImage(index) {
             renderWidth = containerHeight * imageAspectRatio;
         }
         
+        // Set canvas dimensions
         canvas.width = renderWidth;
         canvas.height = renderHeight;
         
+        // Draw image
+        ctx.drawImage(img, 0, 0, renderWidth, renderHeight);
+        
+        // Draw annotations
         drawAnnotations();
-        updateAnnotationsList(); // Update list after loading image
+        updateAnnotationsList();
     };
+
     img.src = images[index].url;
     currentImageIndex = index;
     updateImageCounter();
@@ -402,12 +512,10 @@ async function saveAnnotationsToFile() {
     const annotations = images[currentImageIndex].annotations || [];
     
     // Convert annotations to YOLO format
-    const yoloAnnotations = annotations.map(ann => {
-        return {
-            class_name: ann.class,
-            coordinates: `${ann.x} ${ann.y} ${ann.width} ${ann.height}`
-        };
-    });
+    const yoloAnnotations = annotations.map(ann => ({
+        class_name: ann.class,
+        coordinates: `${ann.x} ${ann.y} ${ann.width} ${ann.height}`
+    }));
 
     try {
         const response = await fetch('/save_annotations', {
@@ -424,9 +532,17 @@ async function saveAnnotationsToFile() {
         if (!response.ok) {
             throw new Error('Failed to save annotations');
         }
+
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to save annotations');
+        }
+
+        console.log('Annotations saved successfully');
     } catch (error) {
         console.error('Error saving annotations:', error);
-        alert('Failed to save annotations');
+        // Optionally show an error message to the user
+        showNotification('error', 'Failed to save annotations');
     }
 }
 
@@ -565,12 +681,29 @@ async function clearAnnotations() {
     }
 }
 
-function showNotification(message, type = 'success') {
+function showNotification(type, message) {
     const notification = document.createElement('div');
     notification.className = `notification ${type}`;
     notification.textContent = message;
     document.body.appendChild(notification);
 
+    // Add styles for the notification
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.padding = '10px 20px';
+    notification.style.borderRadius = '4px';
+    notification.style.zIndex = '1000';
+    
+    if (type === 'error') {
+        notification.style.backgroundColor = '#ff4444';
+        notification.style.color = 'white';
+    } else {
+        notification.style.backgroundColor = '#44ff44';
+        notification.style.color = 'white';
+    }
+
+    // Remove the notification after 3 seconds
     setTimeout(() => {
         notification.remove();
     }, 3000);
@@ -602,9 +735,14 @@ async function clearAllAnnotationFiles() {
 // Add this function to populate existing classes
 function updateClassList() {
     const datalist = document.getElementById('existingClasses');
+    if (!datalist) {
+        console.error('Datalist element not found');
+        return;
+    }
+    
+    // Get unique class names from all annotations
     const existingClasses = new Set();
     
-    // Collect all existing class names
     images.forEach(img => {
         if (img.annotations) {
             img.annotations.forEach(ann => {
@@ -615,7 +753,7 @@ function updateClassList() {
         }
     });
     
-    // Update datalist
+    // Clear and update datalist
     datalist.innerHTML = '';
     existingClasses.forEach(className => {
         const option = document.createElement('option');
@@ -627,14 +765,17 @@ function updateClassList() {
 // Add keyboard handling for the popup
 document.getElementById('className').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
-        document.getElementById('confirmClass').click();
+        const className = this.value.trim();
+        if (className) {
+            saveAnnotation(className);
+        }
     }
 });
 
 // Close popup when clicking outside
 document.getElementById('classPopup').addEventListener('click', function(e) {
     if (e.target === this) {
-        document.getElementById('cancelAnnotation').click();
+        hideClassPopup();
     }
 });
 
@@ -747,3 +888,418 @@ document.getElementById('processVideoBtn').addEventListener('click', async funct
         btn.innerHTML = originalText;
     }
 });
+
+// Add these event listeners
+document.getElementById('makeDatasetBtn').addEventListener('click', async function() {
+    const btn = this;
+    try {
+        // Show loading state
+        btn.disabled = true;
+        btn.classList.add('btn-loading');
+        
+        const response = await fetch('/prepare_training', {
+            method: 'POST'
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification('success', result.message);
+        } else {
+            showNotification('error', 'Error: ' + (result.error || 'Failed to prepare dataset'));
+        }
+    } catch (error) {
+        console.error('Error preparing dataset:', error);
+        showNotification('error', 'Error preparing dataset. Please try again.');
+    } finally {
+        // Reset button state
+        btn.disabled = false;
+        btn.classList.remove('btn-loading');
+    }
+});
+
+document.getElementById('startTrainingBtn').addEventListener('click', function() {
+    const trainingPanel = document.getElementById('trainingPanel');
+    if (trainingPanel.style.display === 'none') {
+        trainingPanel.style.display = 'block';
+        trainingPanel.scrollIntoView({ behavior: 'smooth' });
+    } else {
+        trainingPanel.style.display = 'none';
+    }
+});
+
+document.getElementById('executeTrainingBtn').addEventListener('click', async function() {
+    const epochs = document.getElementById('epochCount').value;
+    const btn = this;
+    
+    if (!epochs || epochs < 1) {
+        showNotification('error', 'Please enter a valid number of epochs');
+        return;
+    }
+    
+    try {
+        // Show loading state
+        btn.disabled = true;
+        btn.classList.add('btn-loading');
+        
+        const response = await fetch('/start_training', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                epochs: parseInt(epochs)
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification('success', 'Training started successfully!');
+            document.getElementById('trainingPanel').style.display = 'none';
+        } else {
+            showNotification('error', 'Error: ' + (result.error || 'Failed to start training'));
+        }
+    } catch (error) {
+        console.error('Error starting training:', error);
+        showNotification('error', 'Error starting training. Please try again.');
+    } finally {
+        // Reset button state
+        btn.disabled = false;
+        btn.classList.remove('btn-loading');
+    }
+});
+
+// Add these event listeners to your existing JavaScript
+document.getElementById('closeTrainingPanel').addEventListener('click', function() {
+    document.getElementById('trainingPanel').style.display = 'none';
+});
+
+// Add this helper function for notifications
+function showNotification(type, message) {
+    // You can implement this using your preferred notification library
+    // For now, we'll use alert
+    alert(message);
+}
+
+// Make sure popup is hidden when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    hideClassPopup();
+});
+
+// Update your existing event listeners
+document.getElementById('cancelAnnotation').addEventListener('click', hideClassPopup);
+
+// When you need to show the popup (e.g., after drawing a box)
+// Call showClassPopup() instead of directly manipulating style
+
+// Helper function to draw annotation boxes
+function drawAnnotationBox(ctx, annotation) {
+    const { x, y, width, height, class: className } = annotation;
+    
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 2;
+    
+    // Convert normalized coordinates to canvas coordinates
+    const canvasX = x * canvas.width;
+    const canvasY = y * canvas.height;
+    const canvasWidth = width * canvas.width;
+    const canvasHeight = height * canvas.height;
+    
+    ctx.strokeRect(canvasX, canvasY, canvasWidth, canvasHeight);
+    
+    // Draw label
+    ctx.fillStyle = '#00ff00';
+    ctx.font = '14px Arial';
+    const padding = 2;
+    ctx.fillText(className, canvasX, canvasY - padding);
+}
+
+// Update the mouse event handlers
+function getMousePos(canvas, evt) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        x: (evt.clientX - rect.left) / canvasScale.x,
+        y: (evt.clientY - rect.top) / canvasScale.y
+    };
+}
+
+// Update the mousedown event handler
+canvas.addEventListener('mousedown', function(e) {
+    if (isDrawing) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    startX = (e.clientX - rect.left) * scaleX;
+    startY = (e.clientY - rect.top) * scaleY;
+    
+    isDrawing = true;
+});
+
+// Update the mousemove event handler
+canvas.addEventListener('mousemove', function(e) {
+    if (!isDrawing) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    const currentX = (e.clientX - rect.left) * scaleX;
+    const currentY = (e.clientY - rect.top) * scaleY;
+    
+    // Redraw the image and all annotations
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+    
+    // Draw existing annotations
+    if (images[currentImageIndex].annotations) {
+        images[currentImageIndex].annotations.forEach(annotation => {
+            drawAnnotationBox(ctx, annotation);
+        });
+    }
+    
+    // Draw current rectangle
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(
+        startX,
+        startY,
+        currentX - startX,
+        currentY - startY
+    );
+});
+
+// Update the mouseup event handler
+canvas.addEventListener('mouseup', function(e) {
+    if (!isDrawing) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    const endX = (e.clientX - rect.left) * scaleX;
+    const endY = (e.clientY - rect.top) * scaleY;
+    
+    // Calculate normalized coordinates
+    const x = Math.min(startX, endX) / canvas.width;
+    const y = Math.min(startY, endY) / canvas.height;
+    const width = Math.abs(endX - startX) / canvas.width;
+    const height = Math.abs(endY - startY) / canvas.height;
+    
+    // Only show class popup if the box has some size
+    if (width > 0.01 && height > 0.01) {
+        currentAnnotation = { x, y, width, height };
+        showClassPopup();
+    }
+    
+    isDrawing = false;
+});
+
+// Update the addAnnotation function
+function addAnnotation(className) {
+    if (!currentAnnotation || !className || typeof className !== 'string') {
+        console.error('Invalid annotation or class name');
+        return;
+    }
+
+    const canvas = document.getElementById('canvas');
+    
+    // Create normalized annotation
+    const annotation = {
+        x: currentAnnotation.x / canvas.width,
+        y: currentAnnotation.y / canvas.height,
+        width: currentAnnotation.width / canvas.width,
+        height: currentAnnotation.height / canvas.height,
+        class: className
+    };
+
+    // Initialize annotations array if needed
+    if (!images[currentImageIndex].annotations) {
+        images[currentImageIndex].annotations = [];
+    }
+
+    // Add the annotation
+    images[currentImageIndex].annotations.push(annotation);
+
+    // Update display
+    drawAnnotations();
+    updateAnnotationsList();
+    saveAnnotationsToFile();
+
+    // Reset current annotation
+    currentAnnotation = null;
+}
+
+// Update the confirm class button handler
+document.getElementById('confirmClass').addEventListener('click', function() {
+    const className = document.getElementById('className').value.trim();
+    console.log('Confirming class:', className);
+    if (className && currentAnnotation) {
+        saveAnnotation(className);
+    } else {
+        console.error('Missing className or currentAnnotation:', { className, currentAnnotation });
+    }
+});
+
+// Update addAnnotation function
+function addAnnotation(className) {
+    if (!currentAnnotation) return;
+    
+    const annotation = {
+        ...currentAnnotation,
+        class: className  // Use the passed className string
+    };
+    
+    if (!images[currentImageIndex].annotations) {
+        images[currentImageIndex].annotations = [];
+    }
+    
+    images[currentImageIndex].annotations.push(annotation);
+    
+    // Redraw everything
+    drawAnnotations();
+    updateAnnotationsList();
+    saveAnnotationsToFile();
+    
+    currentAnnotation = null;
+}
+
+// Update the class list function
+function updateClassList() {
+    const datalist = document.getElementById('existingClasses');
+    if (!datalist) {
+        console.error('Datalist element not found');
+        return;
+    }
+    
+    // Get unique class names from all annotations
+    const existingClasses = new Set();
+    
+    images.forEach(img => {
+        if (img.annotations) {
+            img.annotations.forEach(ann => {
+                if (ann.class) {
+                    existingClasses.add(ann.class);
+                }
+            });
+        }
+    });
+    
+    // Clear and update datalist
+    datalist.innerHTML = '';
+    existingClasses.forEach(className => {
+        const option = document.createElement('option');
+        option.value = className;
+        datalist.appendChild(option);
+    });
+}
+
+// Update the event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    const confirmButton = document.getElementById('confirmClass');
+    const cancelButton = document.getElementById('cancelAnnotation');
+    const classInput = document.getElementById('className');
+
+    // Confirm button handler
+    if (confirmButton) {
+        confirmButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            const inputValue = classInput.value.trim();
+            console.log('Confirm clicked with value:', inputValue); // Debug log
+            
+            if (inputValue) {
+                handleAnnotation(inputValue);
+            }
+        });
+    }
+
+    // Cancel button handler
+    if (cancelButton) {
+        cancelButton.addEventListener('click', function() {
+            currentAnnotation = null;
+            hideClassPopup();
+            drawAnnotations();
+        });
+    }
+
+    // Enter key handler
+    if (classInput) {
+        classInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const inputValue = this.value.trim();
+                console.log('Enter pressed with value:', inputValue); // Debug log
+                
+                if (inputValue) {
+                    handleAnnotation(inputValue);
+                }
+            }
+        });
+    }
+});
+
+// Update the annotation handling function
+function handleAnnotation(className) {
+    console.log('Handling annotation with:', className); // Debug log
+    
+    if (!currentAnnotation) {
+        console.error('No current annotation exists');
+        return;
+    }
+
+    const canvas = document.getElementById('canvas');
+    
+    // Create new annotation object
+    const newAnnotation = {
+        x: currentAnnotation.x / canvas.width,
+        y: currentAnnotation.y / canvas.height,
+        width: currentAnnotation.width / canvas.width,
+        height: currentAnnotation.height / canvas.height,
+        class: className
+    };
+
+    console.log('Created annotation:', newAnnotation); // Debug log
+
+    // Add to annotations array
+    if (!images[currentImageIndex].annotations) {
+        images[currentImageIndex].annotations = [];
+    }
+    images[currentImageIndex].annotations.push(newAnnotation);
+
+    // Update UI
+    hideClassPopup();
+    drawAnnotations();
+    updateAnnotationsList();
+    saveAnnotationsToFile();
+    currentAnnotation = null;
+}
+
+// Update showClassPopup function
+function showClassPopup() {
+    const popup = document.getElementById('classPopup');
+    const classInput = document.getElementById('className');
+    
+    if (!popup || !classInput) {
+        console.error('Required popup elements not found');
+        return;
+    }
+    
+    popup.style.display = 'flex';
+    classInput.value = '';
+    classInput.focus();
+}
+
+// Update hideClassPopup function
+function hideClassPopup() {
+    const popup = document.getElementById('classPopup');
+    const classInput = document.getElementById('className');
+    
+    if (popup) {
+        popup.style.display = 'none';
+    }
+    if (classInput) {
+        classInput.value = '';
+    }
+}
