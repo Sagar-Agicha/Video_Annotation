@@ -82,61 +82,13 @@
         }
 
         .popup {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
             background-color: rgba(0, 0, 0, 0.5);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
         }
 
         .popup-content {
             background-color: white;
-            padding: 20px;
             border-radius: 8px;
-            min-width: 300px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        .input-container {
-            margin: 15px 0;
-        }
-
-        #className {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-
-        .popup-buttons {
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-            margin-top: 15px;
-        }
-
-        .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-
-        .btn-primary {
-            background-color: #2196F3;
-            color: white;
-        }
-
-        .btn-secondary {
-            background-color: #6c757d;
-            color: white;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
         #confirmClass {
@@ -174,297 +126,6 @@
         .frame-input-container {
             margin-bottom: 10px;
         }
-
-        .training-controls {
-            margin: 20px 0;
-        }
-        
-        .training-panel {
-            margin-top: 20px;
-            padding: 20px;
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            border: 1px solid #dee2e6;
-        }
-        
-        .training-options {
-            max-width: 300px;
-        }
-        
-        .form-group {
-            margin-bottom: 15px;
-        }
-        
-        #executeTrainingBtn {
-            margin-top: 10px;
-        }
-
-        .training-section {
-            margin: 40px 0;
-            padding: 20px;
-            background: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        .section-title {
-            color: #2c3e50;
-            margin-bottom: 25px;
-            font-weight: 600;
-            text-align: center;
-        }
-
-        .training-controls {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-
-        .control-card {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 25px;
-            width: 300px;
-            text-align: center;
-            transition: transform 0.2s, box-shadow 0.2s;
-            border: 1px solid #e9ecef;
-        }
-
-        .control-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-        }
-
-        .card-icon {
-            font-size: 2.5em;
-            margin-bottom: 15px;
-        }
-
-        .card-description {
-            color: #6c757d;
-            margin: 15px 0;
-            font-size: 0.9em;
-            min-height: 40px;
-        }
-
-        .action-btn {
-            width: 100%;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-weight: 500;
-            transition: all 0.3s;
-        }
-
-        .action-btn i {
-            margin-right: 8px;
-        }
-
-        .training-panel {
-            margin-top: 30px;
-            padding: 25px;
-            background-color: #f8f9fa;
-            border-radius: 12px;
-            border: 1px solid #dee2e6;
-            max-width: 600px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .panel-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .close-btn {
-            background: none;
-            border: none;
-            font-size: 1.5em;
-            cursor: pointer;
-            color: #6c757d;
-        }
-
-        .training-options {
-            padding: 20px;
-            background: white;
-            border-radius: 8px;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #495057;
-            font-weight: 500;
-        }
-
-        .input-with-info {
-            position: relative;
-        }
-
-        .input-info {
-            font-size: 0.8em;
-            color: #6c757d;
-            margin-top: 5px;
-        }
-
-        #epochCount {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #dee2e6;
-            border-radius: 6px;
-            font-size: 1em;
-        }
-
-        #epochCount:focus {
-            border-color: #80bdff;
-            outline: none;
-            box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
-        }
-
-        #executeTrainingBtn {
-            margin-top: 20px;
-            background-color: #ffc107;
-            border: none;
-        }
-
-        #executeTrainingBtn:hover {
-            background-color: #e0a800;
-        }
-
-        /* Add loading state styles */
-        .btn-loading {
-            position: relative;
-            color: transparent !important;
-        }
-
-        .btn-loading:after {
-            content: '';
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            top: 50%;
-            left: 50%;
-            margin-top: -8px;
-            margin-left: -8px;
-            border: 2px solid #fff;
-            border-radius: 50%;
-            border-right-color: transparent;
-            animation: spin 0.75s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        /* Update/add these styles */
-        .training-controls {
-            display: flex;
-            gap: 10px;  /* Space between buttons */
-        }
-
-        #makeDatasetBtn {
-            background-color: #4a90e2;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        #makeDatasetBtn:hover {
-            background-color: #357abd;
-        }
-
-        #startTrainingBtn {
-            background-color: #28a745;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        #startTrainingBtn:hover {
-            background-color: #218838;
-        }
-
-        .training-panel {
-            margin-top: 20px;
-            padding: 20px;
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            border: 1px solid #dee2e6;
-        }
-
-        .training-options {
-            max-width: 300px;
-        }
-
-        .form-group {
-            margin-bottom: 15px;
-        }
-
-        #epochCount {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #dee2e6;
-            border-radius: 4px;
-        }
-
-        #executeTrainingBtn {
-            background-color: #ffc107;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            width: 100%;
-        }
-
-        #executeTrainingBtn:hover {
-            background-color: #e0a800;
-        }
-
-        /* Add disabled state styles */
-        .btn:disabled {
-            opacity: 0.65;
-            cursor: not-allowed;
-        }
-
-        /* Loading state styles */
-        .btn-loading {
-            position: relative;
-            color: transparent !important;
-        }
-
-        .btn-loading:after {
-            content: '';
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            top: 50%;
-            left: 50%;
-            margin-top: -8px;
-            margin-left: -8px;
-            border: 2px solid #fff;
-            border-radius: 50%;
-            border-right-color: transparent;
-            animation: spin 0.75s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
     </style>
 </head>
 <body>
@@ -492,7 +153,13 @@
                                 <label for="frameCount">Skip frames interval (e.g., 2 means save every 2nd frame):</label>
                                 <input type="number" id="frameCount" min="1" value="2" class="frame-input">
                             </div>
-                            <button id="processVideoBtn" class="btn btn-primary mt-2">Extract Frames</button>
+                            <div class="video-controls">
+                                <button id="processVideoBtn" class="btn btn-primary">Extract Frames</button>
+                                <button id="showDetailsBtn" class="btn btn-info">Show Details</button>
+                            </div>
+                            <div id="videoDetails" class="video-details-container" style="display: none;">
+                                <!-- Details will be populated here -->
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -508,11 +175,14 @@
                 </div>
                 <div id="classPopup" class="popup" style="display: none;">
                     <div class="popup-content">
-                        <h3>Enter Class Name</h3>
-                        <input type="text" id="className" placeholder="Enter class name">
+                        <h3>Select Class</h3>
+                        <input type="text" id="className" placeholder="Enter class name" list="existingClasses">
+                        <datalist id="existingClasses">
+                            <!-- Will be populated dynamically -->
+                        </datalist>
                         <div class="popup-buttons">
-                            <button type="button" id="confirmClass">Confirm</button>
-                            <button type="button" id="cancelAnnotation">Cancel</button>
+                            <button id="confirmClass">Confirm</button>
+                            <button id="cancelAnnotation">Cancel</button>
                         </div>
                     </div>
                 </div>
@@ -549,21 +219,7 @@
                         </button>
                     </div>
                     <div class="right-controls">
-                        <div class="training-controls">
-                            <button id="makeDatasetBtn" class="btn btn-primary">Make Dataset</button>
-                            <button id="startTrainingBtn" class="btn btn-success">Start Training</button>
-                            
-                            <!-- Training options panel (hidden by default) -->
-                            <div id="trainingPanel" class="training-panel" style="display: none;">
-                                <div class="training-options">
-                                    <div class="form-group">
-                                        <label for="epochCount">Number of Epochs:</label>
-                                        <input type="number" id="epochCount" class="form-control" min="1" value="100">
-                                    </div>
-                                    <button id="executeTrainingBtn" class="btn btn-warning">Start</button>
-                                </div>
-                            </div>
-                        </div>
+                        <button id="startTraining" class="train-btn">Start Training</button>
                     </div>
                 </div>
             </div>

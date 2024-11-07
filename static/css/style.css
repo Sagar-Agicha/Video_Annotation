@@ -518,20 +518,19 @@ h3 {
     position: fixed;
     top: 20px;
     right: 20px;
-    padding: 10px 20px;
+    padding: 15px 25px;
     border-radius: 4px;
-    z-index: 1000;
-    animation: slideIn 0.3s ease-out;
-}
-
-.notification.error {
-    background-color: #ff4444;
     color: white;
+    animation: slideIn 0.3s ease-out;
+    z-index: 1000;
 }
 
 .notification.success {
-    background-color: #44ff44;
-    color: white;
+    background-color: #059669;
+}
+
+.notification.error {
+    background-color: #dc2626;
 }
 
 @keyframes slideIn {
@@ -543,4 +542,45 @@ h3 {
         transform: translateX(0);
         opacity: 1;
     }
-} 
+}
+
+.video-controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.btn-info {
+    background-color: #0dcaf0;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.btn-info:hover {
+    background-color: #0bacdb;
+}
+
+.video-details-container {
+    margin-top: 15px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+}
+
+.video-details {
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.video-details p {
+    margin: 5px 0;
+}
+
+.video-details strong {
+    color: #495057;
+}

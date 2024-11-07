@@ -20,12 +20,10 @@ print("ALLOWED_EXTENSIONS: ", ALLOWED_EXTENSIONS)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['VIDEO_FOLDER'] = VIDEO_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 * 1024  # 16GB max-limit
-app.config['ANNOTATION_FOLDER'] = 'static/annotations'
 
 # Ensure upload directory exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(VIDEO_FOLDER, exist_ok=True)
-os.makedirs(app.config['ANNOTATION_FOLDER'], exist_ok=True)
 
 # Add these global variables
 LABELS_FILE = 'labels.txt'
@@ -63,15 +61,11 @@ def upload_file():
             if file and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                
-                # Don't overwrite existing annotation file if it exists
-                base_filename = os.path.splitext(filename)[0]
-                annotation_path = os.path.join(ANNOTATIONS_FOLDER, f"{base_filename}.txt")
-                
-                # Save the new image
                 file.save(filepath)
                 
-                # Create empty annotation file only if it doesn't exist
+                # Create empty annotation file
+                base_filename = os.path.splitext(filename)[0]
+                annotation_path = os.path.join(ANNOTATIONS_FOLDER, f"{base_filename}.txt")
                 if not os.path.exists(annotation_path):
                     open(annotation_path, 'a').close()
                 
@@ -176,54 +170,61 @@ def extract_frames(video_path, output_dir, skip_frames=2):
 def save_annotations():
     try:
         data = request.json
-        if not data or 'image_file' not in data or 'annotations' not in data:
-            return jsonify({'success': False, 'error': 'Invalid data format'}), 400
-
         image_file = data['image_file']
         annotations = data['annotations']
-
-        # Create annotation filename from image filename (without extension)
-        base_name = os.path.splitext(image_file)[0]
-        annotation_file = f"{base_name}.txt"
         
-        # Make sure the annotations directory exists
-        if not os.path.exists(app.config['ANNOTATION_FOLDER']):
-            os.makedirs(app.config['ANNOTATION_FOLDER'])
+        # Get base filename without extension
+        base_filename = os.path.splitext(image_file)[0]
         
-        annotation_path = os.path.join(app.config['ANNOTATION_FOLDER'], annotation_file)
-
-        # Write annotations to file
+        # Update class labels
+        updated = False
+        for ann in annotations:
+            class_name = ann['class_name']
+            if class_name not in class_labels:
+                class_labels[class_name] = len(class_labels)
+                updated = True
+        
+        # Save updated labels if necessary
+        if updated:
+            with open(LABELS_FILE, 'w') as f:
+                for label in class_labels:
+                    f.write(f"{label}\n")
+        
+        # Create YOLO format annotations
+        yolo_annotations = []
+        for ann in annotations:
+            class_idx = class_labels[ann['class_name']]
+            coordinates = ann['coordinates']
+            yolo_annotations.append(f"{class_idx} {coordinates}")
+        
+        # Save annotations to file
+        annotation_path = os.path.join(ANNOTATIONS_FOLDER, f"{base_filename}.txt")
         with open(annotation_path, 'w') as f:
-            for ann in annotations:
-                f.write(f"{ann['class_name']} {ann['coordinates']}\n")
-
-        return jsonify({
-            'success': True,
-            'message': 'Annotations saved successfully'
-        })
-
+            f.write('\n'.join(yolo_annotations))
+        
+        return jsonify({'success': True, 'message': 'Annotations saved successfully'})
+    
     except Exception as e:
-        print(f"Error saving annotations: {str(e)}")  # Server-side logging
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        print(f"Error saving annotations: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/get_annotations/<image_file>')
 def get_annotations(image_file):
     try:
-        # Get annotation filename from image filename
-        annotation_file = os.path.splitext(image_file)[0] + '.txt'
-        annotation_path = os.path.join(app.config['ANNOTATION_FOLDER'], annotation_file)
+        base_filename = os.path.splitext(image_file)[0]
+        annotation_path = os.path.join(ANNOTATIONS_FOLDER, f"{base_filename}.txt")
         
         annotations = []
         if os.path.exists(annotation_path):
             with open(annotation_path, 'r') as f:
                 for line in f:
                     parts = line.strip().split()
-                    if len(parts) >= 5:
+                    if len(parts) == 5:  # class_idx x y width height
+                        class_idx = int(parts[0])
+                        # Find class name from index
+                        class_name = next((k for k, v in class_labels.items() if v == class_idx), 'unknown')
                         annotations.append({
-                            'class': parts[0],
+                            'class': class_name,
                             'x': float(parts[1]),
                             'y': float(parts[2]),
                             'width': float(parts[3]),
@@ -384,22 +385,36 @@ def clear_all_annotations():
             'message': 'Failed to clear annotations'
         }), 500
 
-@app.route('/start_training', methods=['POST'])
-def start_training():
+@app.route('/get_video_details', methods=['POST'])
+def get_video_details():
     try:
         data = request.json
-        epochs = data.get('epochs', 100)  # Default to 100 if not specified
+        filename = data.get('filename')
         
-        # Here you would add your actual training code
-        # For example, calling YOLOv5 training script
+        if not filename:
+            return jsonify({'error': 'No filename provided'}), 400
+            
+        video_path = os.path.join(app.config['VIDEO_FOLDER'], filename)
+        if not os.path.exists(video_path):
+            return jsonify({'error': 'Video file not found'}), 404
+            
+        cap = cv2.VideoCapture(video_path)
+        
+        # Get video properties
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps if fps > 0 else 0
+        
+        cap.release()
         
         return jsonify({
             'success': True,
-            'message': f'Training started with {epochs} epochs'
+            'fps': fps,
+            'total_frames': total_frames,
+            'duration': duration
         })
         
     except Exception as e:
-        print(f"Error starting training: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
