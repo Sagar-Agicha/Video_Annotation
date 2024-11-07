@@ -80,23 +80,23 @@ body {
 }
 
 /* Canvas Section */
-.canvas-section {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-}
-
 #canvas-container {
-    flex: 1;
     position: relative;
-    margin: 10px;
-    background-color: #1f2937;
-    border: 1px solid #394867;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    margin: 0 auto;
+    background-color: #f0f0f0;
+    border: 1px solid #ddd;
+    transition: width 0.3s, height 0.3s;
 }
 
-canvas {
-    display: block;
-    background-color: #2a3649;
+#canvas {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    background-color: white;
 }
 
 /* Navigation Controls */
@@ -629,4 +629,101 @@ h3 {
     background-color: #1d4ed8;
     transform: translateY(-1px);
     box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+}
+
+.training-progress {
+    background-color: #ffffff;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.epoch-counter {
+    font-size: 14px;
+    color: #666;
+}
+
+.metrics-container {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+}
+
+.metric {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.metric label {
+    font-weight: 500;
+    color: #495057;
+}
+
+.metric span {
+    font-family: monospace;
+    color: #2563eb;
+}
+
+.training-panel {
+    margin-top: 20px;
+}
+
+#trainingProgress {
+    background-color: #ffffff;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 10px;
+}
+
+.progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 10px;
+}
+
+.metrics-container {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+}
+
+.metric {
+    background-color: #f8f9fa;
+    padding: 12px;
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.metric label {
+    font-weight: 500;
+    color: #495057;
+}
+
+.metric span {
+    font-family: monospace;
+    color: #2563eb;
+    font-weight: 500;
+}
+
+.epoch-counter {
+    font-size: 14px;
+    color: #6b7280;
+    font-weight: 500;
 }

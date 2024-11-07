@@ -23,11 +23,15 @@ let selectedVideoFile = null;
 let uploadedVideoFilename = null;
 
 function initializeApp() {
+    console.log("Initializing app...");
     loadImages();
     
     const canvas = document.getElementById('canvas');
     const confirmClass = document.getElementById('confirmClass');
     const cancelAnnotation = document.getElementById('cancelAnnotation');
+    const clearAnnotationsBtn = document.getElementById('clearAnnotations');
+    
+    console.log("Clear Annotations Button:", clearAnnotationsBtn);
     
     canvas.addEventListener('mousedown', startDrawing);
     canvas.addEventListener('mousemove', draw);
@@ -48,15 +52,34 @@ function initializeApp() {
     document.getElementById('prevImage').addEventListener('click', showPreviousImage);
     document.getElementById('nextImage').addEventListener('click', showNextImage);
     
-    setupVideoUpload();
+    // Clear buttons with debug logs
+    document.getElementById('clearImages').addEventListener('click', () => {
+        console.log("Clear Images clicked");
+        clearImages();
+    });
     
-    // Replace save button with clear annotations
-    document.getElementById('clearAnnotations').addEventListener('click', clearAnnotations);
+    if (clearAnnotationsBtn) {
+        clearAnnotationsBtn.addEventListener('click', () => {
+            console.log("Clear Annotations clicked");
+            clearAllAnnotations();
+        });
+    } else {
+        console.error("Clear Annotations button not found!");
+    }
+    
+    // Training buttons
     document.getElementById('startTraining').addEventListener('click', createDatabase);
     document.getElementById('startProcess').addEventListener('click', startProcess);
-    
-    // Add clear images button handler
-    document.getElementById('clearImages').addEventListener('click', clearImages);
+
+    // Add video details button listener
+    document.getElementById('showDetailsBtn').addEventListener('click', () => {
+        console.log("Show Details clicked");
+        if (uploadedVideoFilename) {
+            showVideoDetails(uploadedVideoFilename);
+        } else {
+            alert('Please upload a video first');
+        }
+    });
 }
 
 async function uploadImages(e) {
@@ -135,36 +158,84 @@ function setupEventListeners() {
 }
 
 function startDrawing(e) {
+    console.log("Start drawing");
     isDrawing = true;
     const rect = canvas.getBoundingClientRect();
-    startX = e.clientX - rect.left;
-    startY = e.clientY - rect.top;
-    currentAnnotation = { x: startX, y: startY, width: 0, height: 0 };
-    drawAnnotations();
+    startX = (e.clientX - rect.left) / canvas.width;
+    startY = (e.clientY - rect.top) / canvas.height;
 }
 
 function draw(e) {
     if (!isDrawing) return;
-    
-    const rect = canvas.getBoundingClientRect();
-    const currentX = e.clientX - rect.left;
-    const currentY = e.clientY - rect.top;
 
-    currentAnnotation.width = currentX - startX;
-    currentAnnotation.height = currentY - startY;
-    
-    drawAnnotations();
+    const rect = canvas.getBoundingClientRect();
+    const currentX = (e.clientX - rect.left) / canvas.width;
+    const currentY = (e.clientY - rect.top) / canvas.height;
+
+    // Clear previous drawings
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Redraw image
+    if (currentImage) {
+        ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+    }
+
+    // Draw existing annotations
+    if (images[currentImageIndex] && images[currentImageIndex].annotations) {
+        images[currentImageIndex].annotations.forEach(ann => {
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(
+                ann.x * canvas.width,
+                ann.y * canvas.height,
+                ann.width * canvas.width,
+                ann.height * canvas.height
+            );
+        });
+    }
+
+    // Draw current rectangle
+    ctx.strokeStyle = '#ff0000';  // Red color for current drawing
+    ctx.lineWidth = 2;
+    const width = currentX - startX;
+    const height = currentY - startY;
+    ctx.strokeRect(
+        startX * canvas.width,
+        startY * canvas.height,
+        width * canvas.width,
+        height * canvas.height
+    );
 }
 
 function endDrawing(e) {
     if (!isDrawing) return;
     isDrawing = false;
 
-    if (currentAnnotation && Math.abs(currentAnnotation.width) > 5 && Math.abs(currentAnnotation.height) > 5) {
-        showClassPopup();
-    } else {
-        currentAnnotation = null;
-        drawAnnotations();
+    const rect = canvas.getBoundingClientRect();
+    const endX = (e.clientX - rect.left) / canvas.width;
+    const endY = (e.clientY - rect.top) / canvas.height;
+
+    // Calculate dimensions
+    const width = Math.abs(endX - startX);
+    const height = Math.abs(endY - startY);
+    const x = Math.min(startX, endX);
+    const y = Math.min(startY, endY);
+
+    // Only create annotation if the box has some size
+    if (width > 0.01 && height > 0.01) {
+        currentAnnotation = {
+            x: x,
+            y: y,
+            width: width,
+            height: height
+        };
+
+        // Show class input popup
+        const popup = document.getElementById('classPopup');
+        popup.style.display = 'block';
+        document.getElementById('className').value = '';
+        document.getElementById('className').focus();
     }
 }
 
@@ -177,38 +248,52 @@ function showClassPopup() {
     className.focus();
 }
 
-function saveAnnotation() {
-    const className = document.getElementById('className').value.trim();
-    if (!className || !currentAnnotation) return;
+async function saveAnnotation() {
+    try {
+        const className = document.getElementById('className').value;
+        if (!className) {
+            console.log("No class name provided");
+            return;
+        }
 
-    const canvas = document.getElementById('canvas');
-    
-    // Convert to YOLO format (normalized coordinates)
-    const x = Math.min(currentAnnotation.x, currentAnnotation.x + currentAnnotation.width);
-    const y = Math.min(currentAnnotation.y, currentAnnotation.y + currentAnnotation.height);
-    const width = Math.abs(currentAnnotation.width);
-    const height = Math.abs(currentAnnotation.height);
+        console.log("Current annotation:", currentAnnotation);  // Debug log
 
-    const annotation = {
-        x: (x + width/2) / canvas.width,
-        y: (y + height/2) / canvas.height,
-        width: width / canvas.width,
-        height: height / canvas.height,
-        class: className
-    };
+        // Save the current annotation
+        if (currentAnnotation) {
+            // Store the original coordinates before any modifications
+            const annotation = {
+                x: currentAnnotation.x,
+                y: currentAnnotation.y,
+                width: currentAnnotation.width,
+                height: currentAnnotation.height,
+                class: className
+            };
 
-    if (!images[currentImageIndex].annotations) {
-        images[currentImageIndex].annotations = [];
+            // Initialize annotations array if it doesn't exist
+            if (!images[currentImageIndex].annotations) {
+                images[currentImageIndex].annotations = [];
+            }
+
+            // Add the annotation to the array
+            images[currentImageIndex].annotations.push(annotation);
+            console.log("Added annotation:", annotation);  // Debug log
+            console.log("All annotations:", images[currentImageIndex].annotations);  // Debug log
+
+            // Save to file
+            await saveAnnotationsToFile();
+
+            // Hide popup and reset current annotation
+            document.getElementById('classPopup').style.display = 'none';
+            currentAnnotation = null;
+
+            // Redraw all annotations
+            drawAnnotations();
+            updateAnnotationsList();
+        }
+    } catch (error) {
+        console.error('Error in saveAnnotation:', error);
+        alert('Error saving annotation: ' + error.message);
     }
-    images[currentImageIndex].annotations.push(annotation);
-
-    // Hide popup and reset current annotation
-    document.getElementById('classPopup').style.display = 'none';
-    currentAnnotation = null;
-    
-    // Update display
-    updateAnnotationsList();
-    drawAnnotations();
 }
 
 function updateAnnotationsList() {
@@ -319,64 +404,88 @@ function drawBox(ctx, box, className = '') {
 }
 
 function drawAnnotations() {
-    const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     
-    // Clear and redraw image
+    // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw image
     if (currentImage) {
         ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
     }
 
-    // Draw all saved annotations
-    if (images[currentImageIndex].annotations) {
+    // Draw all annotations
+    if (images[currentImageIndex] && images[currentImageIndex].annotations) {
         images[currentImageIndex].annotations.forEach(ann => {
-            drawBox(ctx, { ...ann, normalized: true }, ann.class);
-        });
-    }
+            ctx.strokeStyle = '#00ff00';  // Green color
+            ctx.lineWidth = 2;
+            ctx.strokeRect(
+                ann.x * canvas.width,
+                ann.y * canvas.height,
+                ann.width * canvas.width,
+                ann.height * canvas.height
+            );
 
-    // Draw current annotation if drawing
-    if (currentAnnotation) {
-        drawBox(ctx, currentAnnotation);
+            // Draw label
+            ctx.fillStyle = '#00ff00';
+            ctx.font = '12px Arial';
+            ctx.fillText(
+                ann.class,
+                ann.x * canvas.width,
+                ann.y * canvas.height - 5
+            );
+        });
     }
 }
 
 async function displayImage(index) {
     if (images.length === 0 || index < 0 || index >= images.length) return;
     
-    // Load annotations for this image
     const annotations = await loadAnnotationsForImage(images[index].name);
     images[index].annotations = annotations;
     
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const canvasContainer = document.getElementById('canvas-container');
+    const container = document.getElementById('canvas-container');
     
     const img = new Image();
     img.onload = function() {
         currentImage = img;
         
-        // Calculate dimensions maintaining aspect ratio
-        const containerWidth = canvasContainer.clientWidth;
-        const containerHeight = canvasContainer.clientHeight;
-        const imageAspectRatio = img.width / img.height;
-        const containerAspectRatio = containerWidth / containerHeight;
+        // Determine if image is horizontal or vertical
+        const isHorizontal = img.width > img.height;
         
-        let renderWidth, renderHeight;
-        
-        if (imageAspectRatio > containerAspectRatio) {
-            renderWidth = containerWidth;
-            renderHeight = containerWidth / imageAspectRatio;
+        if (isHorizontal) {
+            canvas.width = 900;
+            canvas.height = 560;
+            container.style.width = '900px';
+            container.style.height = '560px';
         } else {
-            renderHeight = containerHeight;
-            renderWidth = containerHeight * imageAspectRatio;
+            canvas.width = 560;
+            canvas.height = 900;
+            container.style.width = '560px';
+            container.style.height = '900px';
         }
         
-        canvas.width = renderWidth;
-        canvas.height = renderHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        const scale = Math.min(
+            (canvas.width * 0.95) / img.width,
+            (canvas.height * 0.95) / img.height
+        );
+        
+        const x = (canvas.width - img.width * scale) / 2;
+        const y = (canvas.height - img.height * scale) / 2;
+        
+        ctx.drawImage(
+            img,
+            x, y,
+            img.width * scale,
+            img.height * scale
+        );
         
         drawAnnotations();
-        updateAnnotationsList(); // Update list after loading image
+        updateAnnotationsList();
     };
     img.src = images[index].url;
     currentImageIndex = index;
@@ -553,12 +662,6 @@ async function createDatabase() {
         // Save current annotations first
         await saveAnnotationsToFile();
         
-        // Show loading indicator
-        const loadingDiv = document.createElement('div');
-        loadingDiv.id = 'trainingProgress';
-        loadingDiv.innerHTML = 'Preparing database...';
-        document.body.appendChild(loadingDiv);
-        
         const response = await fetch('/prepare_training', {
             method: 'POST'
         });
@@ -573,33 +676,71 @@ async function createDatabase() {
     } catch (error) {
         console.error('Error:', error);
         alert('Error preparing database: ' + error.message);
-    } finally {
-        // Remove loading indicator
-        const loadingDiv = document.getElementById('trainingProgress');
-        if (loadingDiv) {
-            document.body.removeChild(loadingDiv);
-        }
     }
 }
 
-// Add new function for Start button
+// Replace the existing startProcess function with this:
 async function startProcess() {
     try {
+        // Get progress container
+        const progressContainer = document.getElementById('trainingProgress');
+        if (!progressContainer) {
+            throw new Error('Training progress container not found');
+        }
+
+        // Show progress container and reset values
+        progressContainer.style.display = 'block';
+        document.getElementById('currentEpoch').textContent = '0';
+        document.getElementById('totalEpochs').textContent = '0';
+        document.getElementById('map50').textContent = '0.000';
+        document.getElementById('map50-95').textContent = '0.000';
+        document.getElementById('precision').textContent = '0.000';
+        document.getElementById('recall').textContent = '0.000';
+
+        // Make the POST request to start training
         const response = await fetch('/start_process', {
             method: 'POST'
         });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            showNotification('Process started successfully', 'success');
-            console.log('Dataset paths:', result.paths);
-        } else {
-            throw new Error(result.error || 'Failed to start process');
+
+        if (!response.ok) {
+            throw new Error('Failed to start training process');
         }
+
+        // Create EventSource for progress updates
+        const eventSource = new EventSource('/training_progress');
+
+        eventSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            
+            // Update progress display
+            document.getElementById('currentEpoch').textContent = data.epoch;
+            document.getElementById('totalEpochs').textContent = data.total_epochs;
+            document.getElementById('map50').textContent = data.metrics.mAP50.toFixed(3);
+            document.getElementById('map50-95').textContent = data.metrics['mAP50-95'].toFixed(3);
+            document.getElementById('precision').textContent = data.metrics.precision.toFixed(3);
+            document.getElementById('recall').textContent = data.metrics.recall.toFixed(3);
+
+            // Close connection when training is complete
+            if (data.epoch === data.total_epochs) {
+                eventSource.close();
+                showNotification('Training completed successfully', 'success');
+            }
+        };
+
+        eventSource.onerror = function(error) {
+            console.error('EventSource failed:', error);
+            eventSource.close();
+            showNotification('Error during training', 'error');
+            progressContainer.style.display = 'none';
+        };
+
     } catch (error) {
         console.error('Error:', error);
-        showNotification('Error starting process', 'error');
+        showNotification('Error starting training process: ' + error.message, 'error');
+        const progressContainer = document.getElementById('trainingProgress');
+        if (progressContainer) {
+            progressContainer.style.display = 'none';
+        }
     }
 }
 
@@ -822,34 +963,59 @@ document.getElementById('processVideoBtn').addEventListener('click', async funct
     }
 });
 
-async function clearImages() {
-    if (confirm('Are you sure you want to delete all images? This cannot be undone.')) {
-        try {
-            const response = await fetch('/clear_images', {
-                method: 'POST'
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                // Clear the images array and reset display
+function clearImages() {
+    console.log("clearImages function called");
+    if (confirm('Are you sure you want to delete all images and their annotations? This cannot be undone.')) {
+        console.log("User confirmed image deletion");
+        fetch('/clear_images', {
+            method: 'POST',
+        })
+        .then(response => {
+            console.log("Clear images response:", response);
+            return response.json();
+        })
+        .then(data => {
+            console.log("Clear images data:", data);
+            if (data.success) {
+                return fetch('/clear_all_annotations', {
+                    method: 'POST'
+                });
+            }
+            throw new Error(data.error || 'Failed to clear images');
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log("Clear annotations data:", data);
+            if (data.success) {
+                // Reset the UI
                 images = [];
                 currentImageIndex = 0;
                 currentImage = null;
                 
-                // Update UI
-                updateImageCounter();
-                drawAnnotations();
-                updateAnnotationsList();
+                // Clear canvas
+                const canvas = document.getElementById('canvas');
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
                 
-                showNotification('All images cleared successfully', 'success');
-            } else {
-                throw new Error(result.error || 'Failed to clear images');
+                // Clear annotations list
+                const annotationsList = document.getElementById('annotationsList');
+                if (annotationsList) {
+                    annotationsList.innerHTML = '';
+                }
+                
+                // Update UI elements
+                updateImageCounter();
+                
+                alert('Images and annotations cleared successfully');
+                loadImages();
             }
-        } catch (error) {
-            console.error('Error clearing images:', error);
-            showNotification('Cleared all images', 'error');
-        }
+        })
+        .catch(error => {
+            console.error('Error in clearImages:', error);
+            alert('Error clearing images and annotations');
+        });
+    } else {
+        console.log("User cancelled image deletion");
     }
 }
 
@@ -889,3 +1055,108 @@ async function processVideo(filename, frameCount) {
         throw error;
     }
 }
+
+// Add the clearAllAnnotations function
+function clearAllAnnotations() {
+    console.log("clearAllAnnotations function called");
+    if (confirm('Are you sure you want to delete all annotations? This cannot be undone.')) {
+        console.log("User confirmed deletion");
+        fetch('/clear_all_annotations', {
+            method: 'POST'
+        })
+        .then(response => {
+            console.log("Response received:", response);
+            return response.json();
+        })
+        .then(data => {
+            console.log("Data received:", data);
+            if (data.success) {
+                console.log("Clearing annotations from UI");
+                // Clear annotations from current display
+                if (images[currentImageIndex]) {
+                    images[currentImageIndex].annotations = [];
+                }
+                
+                // Clear annotations list
+                const annotationsList = document.getElementById('annotationsList');
+                if (annotationsList) {
+                    annotationsList.innerHTML = '';
+                }
+                
+                // Redraw canvas
+                drawAnnotations();
+                
+                alert('All annotations cleared successfully');
+            } else {
+                throw new Error(data.error || 'Failed to clear annotations');
+            }
+        })
+        .catch(error => {
+            console.error('Error in clearAllAnnotations:', error);
+            alert('Error clearing annotations');
+        });
+    } else {
+        console.log("User cancelled deletion");
+    }
+}
+
+// Add the showVideoDetails function
+async function showVideoDetails(filename) {
+    try {
+        console.log("Fetching video details for:", filename);
+        const response = await fetch('/get_video_details', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ filename: filename })
+        });
+
+        const data = await response.json();
+        console.log("Video details received:", data);
+
+        if (data.success) {
+            const detailsDiv = document.getElementById('videoDetails');
+            detailsDiv.innerHTML = `
+                <div style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 5px;">
+                    <p><strong>FPS:</strong> ${data.fps.toFixed(2)}</p>
+                    <p><strong>Total Frames:</strong> ${data.total_frames}</p>
+                    <p><strong>Duration:</strong> ${data.duration.toFixed(2)} seconds</p>
+                </div>
+            `;
+            detailsDiv.style.display = 'block';
+        } else {
+            throw new Error(data.error || 'Failed to get video details');
+        }
+    } catch (error) {
+        console.error('Error getting video details:', error);
+        alert('Error getting video details: ' + error.message);
+    }
+}
+
+// Make sure uploadedVideoFilename is set when a video is uploaded
+document.getElementById('videoUpload').addEventListener('change', async function(e) {
+    if (this.files && this.files[0]) {
+        const formData = new FormData();
+        formData.append('video', this.files[0]);
+        
+        try {
+            const response = await fetch('/upload_video', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                uploadedVideoFilename = data.filename;  // Save the filename
+                document.getElementById('videoUploadControls').style.display = 'block';
+                console.log("Video uploaded:", uploadedVideoFilename);
+            } else {
+                throw new Error(data.error || 'Upload failed');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error uploading video: ' + error.message);
+        }
+    }
+});

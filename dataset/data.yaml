@@ -1,0 +1,9 @@
+path: C:\Users\DELL\Desktop\Galaxy\VIdeo Annotations\dataset
+train: train\images
+val: valid\images
+test: test\images
+nc: 3
+names:
+- unknown
+- company_logo
+- intro

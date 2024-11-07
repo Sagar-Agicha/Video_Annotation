@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, Response
 import os
 from werkzeug.utils import secure_filename
 from pathlib import Path
@@ -9,6 +9,8 @@ import shutil
 import random
 from sklearn.model_selection import train_test_split
 from ultralytics import YOLO
+import torch
+import yaml
 
 
 app = Flask(__name__)
@@ -30,6 +32,7 @@ os.makedirs(VIDEO_FOLDER, exist_ok=True)
 # Add these global variables
 LABELS_FILE = 'labels.txt'
 ANNOTATIONS_FOLDER = 'annotations'
+DATASET_ROOT = 'dataset'
 
 # Create annotations directory
 os.makedirs(ANNOTATIONS_FOLDER, exist_ok=True)
@@ -243,99 +246,92 @@ def get_annotations(image_file):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Add these constants at the top of your file
-DATASET_ROOT = 'dataset'
-IMAGES_DIR = os.path.join(DATASET_ROOT, 'images')
-LABELS_DIR = os.path.join(DATASET_ROOT, 'labels')
-
-# Create dataset directories
-for split in ['train', 'val', 'test']:
-    os.makedirs(os.path.join(IMAGES_DIR, split), exist_ok=True)
-    os.makedirs(os.path.join(LABELS_DIR, split), exist_ok=True)
-
 @app.route('/prepare_training', methods=['POST'])
 def prepare_training():
     try:
-        # Create dataset directories if they don't exist
-        os.makedirs(DATASET_ROOT, exist_ok=True)
-        os.makedirs(IMAGES_DIR, exist_ok=True)
-        os.makedirs(LABELS_DIR, exist_ok=True)
+        # Create dataset structure
+        for split in ['train', 'valid', 'test']:
+            split_dir = os.path.join(DATASET_ROOT, split)
+            os.makedirs(os.path.join(split_dir, 'images'), exist_ok=True)
+            os.makedirs(os.path.join(split_dir, 'labels'), exist_ok=True)
 
-        # Get all image files
-        image_files = [f for f in os.listdir(app.config['UPLOAD_FOLDER']) 
-                      if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        # Get all annotation files to find unique classes
+        class_set = set()
+        class_names = {}
+        
+        # Read all annotation files to get unique class numbers
+        for ann_file in os.listdir(ANNOTATIONS_FOLDER):
+            if ann_file.endswith('.txt'):
+                with open(os.path.join(ANNOTATIONS_FOLDER, ann_file), 'r') as f:
+                    for line in f:
+                        class_num = int(line.split()[0])
+                        class_set.add(class_num - 1)  # Subtract 1 to convert to 0-based index
+        
+        # Read labels.txt to get class names
+        if os.path.exists(LABELS_FILE):
+            with open(LABELS_FILE, 'r') as f:
+                class_names = {i: name.strip() for i, name in enumerate(f.readlines())}
+        
+        print(f"Found classes: {class_names}")  # Debug print
+        
+        # Create data.yaml file
+        yaml_content = {
+            'path': os.path.abspath(DATASET_ROOT),
+            'train': os.path.join('train', 'images'),
+            'val': os.path.join('valid', 'images'),
+            'test': os.path.join('test', 'images'),
+            'nc': len(class_names),
+            'names': [class_names[i] for i in range(len(class_names))]
+        }
 
-        # Prepare file pairs (image and annotation)
-        file_pairs = []
-        for img_file in image_files:
-            base_name = os.path.splitext(img_file)[0]
-            ann_file = f"{base_name}.txt"
-            
-            if os.path.exists(os.path.join('annotations', ann_file)):
-                file_pairs.append((img_file, ann_file))
+        print(f"YAML content: {yaml_content}")  # Debug print
 
-        # Shuffle the pairs
-        random.shuffle(file_pairs)
+        yaml_path = os.path.join(DATASET_ROOT, 'data.yaml')
+        with open(yaml_path, 'w') as f:
+            yaml.safe_dump(yaml_content, f, sort_keys=False)
 
-        # Calculate split sizes
-        total = len(file_pairs)
-        train_size = int(0.8 * total)
-        val_size = int(0.1 * total)
-        test_size = total - train_size - val_size
+        # Get all images and their annotations
+        image_files = [f for f in os.listdir(app.config['UPLOAD_FOLDER']) if allowed_file(f)]
+        
+        # Split data
+        train_files, temp_files = train_test_split(image_files, train_size=0.7, random_state=42)
+        valid_files, test_files = train_test_split(temp_files, train_size=0.67, random_state=42)
 
-        # Split the data
-        train_pairs = file_pairs[:train_size]
-        val_pairs = file_pairs[train_size:train_size + val_size]
-        test_pairs = file_pairs[train_size + val_size:]
-
-        # Function to move files to their respective directories
-        def move_pairs(pairs, split_name):
-            for img_file, ann_file in pairs:
-                # Move image
+        def copy_files(files, split):
+            for img_file in files:
+                # Copy image
                 src_img = os.path.join(app.config['UPLOAD_FOLDER'], img_file)
-                dst_img = os.path.join(IMAGES_DIR, split_name, img_file)
+                dst_img = os.path.join(DATASET_ROOT, split, 'images', img_file)
                 shutil.copy2(src_img, dst_img)
 
-                # Move annotation
-                src_ann = os.path.join('annotations', ann_file)
-                dst_ann = os.path.join(LABELS_DIR, split_name, ann_file)
-                shutil.copy2(src_ann, dst_ann)
+                # Copy and adjust annotation if it exists
+                base_name = os.path.splitext(img_file)[0]
+                ann_file = f"{base_name}.txt"
+                src_ann = os.path.join(ANNOTATIONS_FOLDER, ann_file)
+                if os.path.exists(src_ann):
+                    dst_ann = os.path.join(DATASET_ROOT, split, 'labels', ann_file)
+                    # Adjust class numbers to start from 0
+                    with open(src_ann, 'r') as f_in, open(dst_ann, 'w') as f_out:
+                        for line in f_in:
+                            parts = line.strip().split()
+                            class_num = int(parts[0])
+                            # Subtract 1 from class number
+                            adjusted_line = f"{class_num - 1} {' '.join(parts[1:])}\n"
+                            f_out.write(adjusted_line)
 
-        # Move files to their respective directories
-        move_pairs(train_pairs, 'train')
-        move_pairs(val_pairs, 'val')
-        move_pairs(test_pairs, 'test')
-
-        # Create dataset.yaml file
-        yaml_content = f"""
-path: {os.path.abspath(DATASET_ROOT)}
-train: images/train
-val: images/val
-test: images/test
-
-names:
-{create_yaml_names()}
-        """
-
-        with open(os.path.join(DATASET_ROOT, 'dataset.yaml'), 'w') as f:
-            f.write(yaml_content)
+        # Copy files to respective splits
+        copy_files(train_files, 'train')
+        copy_files(valid_files, 'valid')
+        copy_files(test_files, 'test')
 
         return jsonify({
             'success': True,
-            'message': f'Dataset prepared successfully with {len(train_pairs)} training, {len(val_pairs)} validation, and {len(test_pairs)} test samples'
+            'message': f'Dataset created with {len(train_files)} training, {len(valid_files)} validation, and {len(test_files)} test images'
         })
 
     except Exception as e:
         print(f"Error preparing training data: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
-def create_yaml_names():
-    """Create the names section of the YAML file from labels"""
-    yaml_names = []
-    with open(LABELS_FILE, 'r') as f:
-        for idx, label in enumerate(f):
-            yaml_names.append(f"  {idx}: {label.strip()}")
-    return '\n'.join(yaml_names)
 
 @app.route('/clear_annotations', methods=['POST'])
 def clear_annotations():
@@ -361,36 +357,44 @@ def clear_annotations():
 @app.route('/clear_all_annotations', methods=['POST'])
 def clear_all_annotations():
     try:
-        # Get all annotation files
-        annotation_files = [f for f in os.listdir(ANNOTATIONS_FOLDER) 
+        # Get absolute path to annotations folder
+        annotations_path = os.path.abspath(ANNOTATIONS_FOLDER)
+        print(f"Clearing annotations from: {annotations_path}")  # Debug print
+        
+        # Get all files in the annotations directory
+        annotation_files = [f for f in os.listdir(annotations_path) 
                           if f.endswith('.txt')]
         
-        # Clear each annotation file
+        deleted_count = 0
         for ann_file in annotation_files:
-            file_path = os.path.join(ANNOTATIONS_FOLDER, ann_file)
+            file_path = os.path.join(annotations_path, ann_file)
             try:
-                # Option 1: Clear the file content
-                open(file_path, 'w').close()
-                
-                # Option 2: Delete the file (uncomment if you prefer deletion)
-                # os.remove(file_path)
+                if os.path.exists(file_path):
+                    os.unlink(file_path)  # Using unlink instead of remove
+                    deleted_count += 1
+                    print(f"Deleted: {file_path}")  # Debug print
             except Exception as e:
-                print(f"Error clearing annotation file {ann_file}: {str(e)}")
+                print(f"Error deleting {file_path}: {str(e)}")
         
-        # Also clear the labels.txt file if you want to reset class labels
-        if os.path.exists(LABELS_FILE):
-            open(LABELS_FILE, 'w').close()
+        # Also delete labels.txt if it exists
+        labels_path = os.path.abspath(LABELS_FILE)
+        if os.path.exists(labels_path):
+            os.unlink(labels_path)
+            print(f"Deleted labels file: {labels_path}")  # Debug print
+        
+        print(f"Successfully deleted {deleted_count} annotation files")  # Debug print
         
         return jsonify({
             'success': True,
-            'message': f'Cleared {len(annotation_files)} annotation files'
+            'message': f'Successfully deleted {deleted_count} annotation files'
         })
     
     except Exception as e:
-        print(f"Error clearing all annotations: {str(e)}")
+        error_msg = f"Error clearing annotations: {str(e)}"
+        print(error_msg)  # Debug print
         return jsonify({
-            'error': str(e),
-            'message': 'Cleared all annotations'
+            'error': error_msg,
+            'success': False
         }), 500
 
 @app.route('/get_video_details', methods=['POST'])
@@ -448,30 +452,60 @@ def clear_images():
 @app.route('/start_process', methods=['POST'])
 def start_process():
     try:
-        # Get absolute paths
-        dataset_root = os.path.abspath(DATASET_ROOT)
-        train_path = os.path.abspath(os.path.join(IMAGES_DIR, 'train'))
-        val_path = os.path.abspath(os.path.join(IMAGES_DIR, 'val'))
-        test_path = os.path.abspath(os.path.join(IMAGES_DIR, 'test'))
-        yaml_path = os.path.abspath(os.path.join(DATASET_ROOT, 'dataset.yaml'))
-
-        model = YOLO("yolo11l.pt")
-        results = model.train(data=yaml_path,epochs=100)
-        
-        return jsonify({
-            'success': True,
-            'paths': {
-                'dataset_root': dataset_root,
-                'train': train_path,
-                'val': val_path,
-                'test': test_path,
-                'yaml': yaml_path
-            }
-        })
-        
+        # Initialize training process
+        return jsonify({'status': 'started'})
     except Exception as e:
-        print(f"Error in start_process: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/training_progress')
+def training_progress():
+    def generate():
+        try:
+            # Disable reloader for this process
+            if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+                dataset_root = os.path.abspath(DATASET_ROOT)
+                yaml_path = os.path.join(dataset_root, 'data.yaml')
+                
+                model = YOLO("C://Users/DELL/Desktop/Galaxy/VIdeo Annotations/yolo11n.pt")
+                results = model.train(data=yaml_path, epochs=100)
+
+                return jsonify({'status': 'completed'})
+            
+        except Exception as e:
+            print(f"Error in training_progress: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return Response(generate(), mimetype='text/event-stream')
+
+@app.route('/save_class', methods=['POST'])
+def save_class():
+    try:
+        print("Received save_class request")  # Debug print
+        data = request.get_json()
+        print("Received data:", data)  # Debug print
+        
+        class_name = data.get('class_name')
+        print(f"Class name received: {class_name}")  # Debug print
+        
+        if not class_name:
+            return jsonify({'error': 'No class name provided'}), 400
+
+        # Read existing classes
+        existing_classes = set()
+        if os.path.exists(LABELS_FILE):
+            with open(LABELS_FILE, 'r') as f:
+                existing_classes = set(line.strip() for line in f)
+
+        # Add new class if it doesn't exist
+        if class_name not in existing_classes:
+            with open(LABELS_FILE, 'a') as f:
+                f.write(f"{class_name}\n")
+            print(f"Added new class: {class_name}")  # Debug print
+
+        return jsonify({'success': True, 'message': f'Class {class_name} saved successfully'})
+    except Exception as e:
+        print(f"Error in save_class: {str(e)}")  # Debug print
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)  # Disable reloader

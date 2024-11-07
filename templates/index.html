@@ -126,6 +126,58 @@
         .frame-input-container {
             margin-bottom: 10px;
         }
+
+        .training-panel {
+            margin-top: 20px;
+        }
+
+        #trainingProgress {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 10px;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 10px;
+        }
+
+        .metrics-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .metric {
+            background-color: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .metric label {
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .metric span {
+            font-family: monospace;
+            color: #2563eb;
+            font-weight: 500;
+        }
+
+        .epoch-counter {
+            font-size: 14px;
+            color: #6b7280;
+            font-weight: 500;
+        }
     </style>
 </head>
 <body>
@@ -224,6 +276,34 @@
                     <div class="right-controls">
                         <button id="startTraining" class="train-btn">Create Database</button>
                         <button id="startProcess" class="start-btn">Start</button>
+                    </div>
+                </div>
+            </div>
+            <div class="panel training-panel">
+                <div id="trainingProgress" style="display: none;">
+                    <div class="progress-header">
+                        <h3>Training Progress</h3>
+                        <span class="epoch-counter">
+                            Epoch: <span id="currentEpoch">0</span>/<span id="totalEpochs">0</span>
+                        </span>
+                    </div>
+                    <div class="metrics-container">
+                        <div class="metric">
+                            <label>mAP50:</label>
+                            <span id="map50">0.000</span>
+                        </div>
+                        <div class="metric">
+                            <label>mAP50-95:</label>
+                            <span id="map50-95">0.000</span>
+                        </div>
+                        <div class="metric">
+                            <label>Precision:</label>
+                            <span id="precision">0.000</span>
+                        </div>
+                        <div class="metric">
+                            <label>Recall:</label>
+                            <span id="recall">0.000</span>
+                        </div>
                     </div>
                 </div>
             </div>
