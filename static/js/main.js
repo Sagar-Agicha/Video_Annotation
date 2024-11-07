@@ -52,7 +52,11 @@ function initializeApp() {
     
     // Replace save button with clear annotations
     document.getElementById('clearAnnotations').addEventListener('click', clearAnnotations);
-    document.getElementById('startTraining').addEventListener('click', startTraining);
+    document.getElementById('startTraining').addEventListener('click', createDatabase);
+    document.getElementById('startProcess').addEventListener('click', startProcess);
+    
+    // Add clear images button handler
+    document.getElementById('clearImages').addEventListener('click', clearImages);
 }
 
 async function uploadImages(e) {
@@ -543,7 +547,8 @@ async function loadAnnotationsForImage(imageFileName) {
     return [];
 }
 
-async function startTraining() {
+// Rename existing startTraining function to createDatabase
+async function createDatabase() {
     try {
         // Save current annotations first
         await saveAnnotationsToFile();
@@ -551,7 +556,7 @@ async function startTraining() {
         // Show loading indicator
         const loadingDiv = document.createElement('div');
         loadingDiv.id = 'trainingProgress';
-        loadingDiv.innerHTML = 'Preparing training data...';
+        loadingDiv.innerHTML = 'Preparing database...';
         document.body.appendChild(loadingDiv);
         
         const response = await fetch('/prepare_training', {
@@ -563,17 +568,38 @@ async function startTraining() {
         if (response.ok) {
             alert(result.message);
         } else {
-            throw new Error(result.error || 'Failed to prepare training data');
+            throw new Error(result.error || 'Failed to prepare database');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Error preparing training data: ' + error.message);
+        alert('Error preparing database: ' + error.message);
     } finally {
         // Remove loading indicator
         const loadingDiv = document.getElementById('trainingProgress');
         if (loadingDiv) {
             document.body.removeChild(loadingDiv);
         }
+    }
+}
+
+// Add new function for Start button
+async function startProcess() {
+    try {
+        const response = await fetch('/start_process', {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification('Process started successfully', 'success');
+            console.log('Dataset paths:', result.paths);
+        } else {
+            throw new Error(result.error || 'Failed to start process');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error starting process', 'error');
     }
 }
 
@@ -795,3 +821,71 @@ document.getElementById('processVideoBtn').addEventListener('click', async funct
         btn.innerHTML = originalText;
     }
 });
+
+async function clearImages() {
+    if (confirm('Are you sure you want to delete all images? This cannot be undone.')) {
+        try {
+            const response = await fetch('/clear_images', {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // Clear the images array and reset display
+                images = [];
+                currentImageIndex = 0;
+                currentImage = null;
+                
+                // Update UI
+                updateImageCounter();
+                drawAnnotations();
+                updateAnnotationsList();
+                
+                showNotification('All images cleared successfully', 'success');
+            } else {
+                throw new Error(result.error || 'Failed to clear images');
+            }
+        } catch (error) {
+            console.error('Error clearing images:', error);
+            showNotification('Cleared all images', 'error');
+        }
+    }
+}
+
+// Update the video processing to delete the video after extraction
+async function processVideo(filename, frameCount) {
+    try {
+        const response = await fetch('/process_video', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                filename: filename,
+                frame_count: parseInt(frameCount)
+            })
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+            // Reset video upload related variables
+            selectedVideoFile = null;
+            uploadedVideoFilename = null;
+            document.getElementById('videoUpload').value = '';
+            document.getElementById('videoUploadControls').style.display = 'none';
+            
+            // Refresh images
+            await loadImages();
+            
+            showNotification(`Extracted ${result.frames_extracted} frames successfully`, 'success');
+        } else {
+            throw new Error(result.error || 'Failed to process video');
+        }
+    } catch (error) {
+        console.error('Error processing video:', error);
+        showNotification('Error processing video', 'error');
+        throw error;
+    }
+}

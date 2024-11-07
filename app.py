@@ -8,6 +8,8 @@ import json
 import shutil
 import random
 from sklearn.model_selection import train_test_split
+from ultralytics import YOLO
+
 
 app = Flask(__name__)
 
@@ -122,7 +124,7 @@ def process_video():
     try:
         data = request.json
         filename = data.get('filename')
-        skip_frames = int(data.get('frame_count', 2))  # This will now be used directly as skip interval
+        skip_frames = int(data.get('frame_count', 2))
         
         video_path = os.path.join(app.config['VIDEO_FOLDER'], filename)
         if not os.path.exists(video_path):
@@ -130,6 +132,12 @@ def process_video():
             
         output_dir = os.path.join(app.config['UPLOAD_FOLDER'])
         extracted_frames = extract_frames(video_path, output_dir, skip_frames=skip_frames)
+
+        # Delete the video file after processing
+        try:
+            os.remove(video_path)
+        except Exception as e:
+            print(f"Error deleting video file: {e}")
 
         return jsonify({
             'success': True,
@@ -382,7 +390,7 @@ def clear_all_annotations():
         print(f"Error clearing all annotations: {str(e)}")
         return jsonify({
             'error': str(e),
-            'message': 'Failed to clear annotations'
+            'message': 'Cleared all annotations'
         }), 500
 
 @app.route('/get_video_details', methods=['POST'])
@@ -415,6 +423,54 @@ def get_video_details():
         })
         
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/clear_images', methods=['POST'])
+def clear_images():
+    try:
+        # Clear images from upload folder
+        for filename in os.listdir(app.config['UPLOAD_FOLDER']):
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+            except Exception as e:
+                print(f"Error deleting {file_path}: {e}")
+
+        return jsonify({
+            'success': True,
+            'message': 'All images cleared successfully'
+        })
+    except Exception as e:
+        print(f"Error clearing images: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/start_process', methods=['POST'])
+def start_process():
+    try:
+        # Get absolute paths
+        dataset_root = os.path.abspath(DATASET_ROOT)
+        train_path = os.path.abspath(os.path.join(IMAGES_DIR, 'train'))
+        val_path = os.path.abspath(os.path.join(IMAGES_DIR, 'val'))
+        test_path = os.path.abspath(os.path.join(IMAGES_DIR, 'test'))
+        yaml_path = os.path.abspath(os.path.join(DATASET_ROOT, 'dataset.yaml'))
+
+        model = YOLO("yolo11l.pt")
+        results = model.train(data=yaml_path,epochs=100)
+        
+        return jsonify({
+            'success': True,
+            'paths': {
+                'dataset_root': dataset_root,
+                'train': train_path,
+                'val': val_path,
+                'test': test_path,
+                'yaml': yaml_path
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error in start_process: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':

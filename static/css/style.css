@@ -469,7 +469,7 @@ h3 {
     position: fixed;
     bottom: 0;
     right: 0;
-    width: 300px;
+    width: 350px;
 }
 
 .left-controls {
@@ -583,4 +583,50 @@ h3 {
 
 .video-details strong {
     color: #495057;
+}
+
+/* Clear Images Button */
+.clear-images-btn {
+    margin-top: 15px;
+    width: 100%;
+    padding: 12px;
+    background-color: #dc2626;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.clear-images-btn:hover {
+    background-color: #b91c1c;
+}
+
+.clear-images-btn i {
+    font-size: 16px;
+}
+
+/* Style for the Start button */
+.start-btn {
+    background-color: #2563eb;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 14px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    transition: all 0.3s ease;
+}
+
+.start-btn:hover {
+    background-color: #1d4ed8;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.2);
 }

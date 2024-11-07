@@ -1,9 +1,0 @@
-
-path: C:\Users\DELL\Desktop\Galaxy\VIdeo Annotations\dataset
-train: images/train
-val: images/val
-test: images/test
-
-names:
-  0: Sagar
-        

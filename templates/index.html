@@ -148,6 +148,9 @@
                             <span>Video Upload</span>
                             <input type="file" id="videoUpload" accept="video/*" style="display: none;"/>
                         </label>
+                        <button id="clearImages" class="clear-images-btn">
+                            <i class="fas fa-trash"></i> Clear Images
+                        </button>
                         <div id="videoUploadControls" style="display: none;">
                             <div class="frame-input-container">
                                 <label for="frameCount">Skip frames interval (e.g., 2 means save every 2nd frame):</label>
@@ -219,7 +222,8 @@
                         </button>
                     </div>
                     <div class="right-controls">
-                        <button id="startTraining" class="train-btn">Start Training</button>
+                        <button id="startTraining" class="train-btn">Create Database</button>
+                        <button id="startProcess" class="start-btn">Start</button>
                     </div>
                 </div>
             </div>
@@ -230,6 +234,28 @@
             // Initialize the application
             initializeApp();
         });
+
+        function clearImages() {
+            if (confirm('Are you sure you want to delete all images? This cannot be undone.')) {
+                fetch('/clear_images', {
+                    method: 'POST',
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Images cleared successfully');
+                        // Refresh the image display if needed
+                        loadImages();  // Assuming you have this function
+                    } else {
+                        alert('Error clearing images: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error clearing images');
+                });
+            }
+        }
     </script>
 </body>
 </html> 
