@@ -1,3 +1,5 @@
+# Training Time - 
+# Testing Time - 7 mins and 9 secs
 import zipfile
 from flask import Flask, render_template, request, jsonify, send_from_directory, Response, send_file
 import os
@@ -16,6 +18,11 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 import pytesseract
+import asyncio
+import aiofiles
+from concurrent.futures import ProcessPoolExecutor
+from openpyxl import Workbook
+from time import time
 
 app = Flask(__name__)
 
@@ -25,6 +32,7 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 UPLOAD_FOLDER = 'static/uploads'
 VIDEO_FOLDER = 'static/videos'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4', 'avi', 'mov', 'wmv'}
+CONFIDENCE_THRESHOLD = 0.6
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['VIDEO_FOLDER'] = VIDEO_FOLDER
@@ -511,26 +519,42 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 @app.route('/training_progress')
 def training_progress():
     try:
-        # Disable reloader for this process
+        start_time = time()  # Start timing
+        
         dataset_root = os.path.abspath(DATASET_ROOT)
         yaml_path = os.path.join(dataset_root, 'data.yaml')
         
-        # Set the specific project and name for training
         model = YOLO("yolo11m.pt")
         results = model.train(
             data=yaml_path,
             epochs=100,
-            project='runs/detect',  # project folder
-            name='train',          # experiment name (will overwrite if exists)
-            exist_ok=True          # overwrite existing experiment
+            project='runs/detect',
+            name='train',
+            exist_ok=True
         )
         
-        # The model will now always be saved at runs/detect/train/weights/last.pt
+        training_time = time() - start_time  # Calculate training time
+        hours = int(training_time // 3600)
+        minutes = int((training_time % 3600) // 60)
+        seconds = int(training_time % 60)
+        
         model_path = os.path.join(MODEL_DIR, 'weights/last.pt')
+
+        print(f"Training completed in {hours}h {minutes}m {seconds}s")
         
         if os.path.exists(model_path):
             print(f"Model saved at: {model_path}")
-            return jsonify({'success': True, 'message': 'Training completed', 'model_path': model_path})
+            return jsonify({
+                'success': True, 
+                'message': f'Training completed in {hours}h {minutes}m {seconds}s', 
+                'model_path': model_path,
+                'training_time': {
+                    'hours': hours,
+                    'minutes': minutes,
+                    'seconds': seconds,
+                    'total_seconds': training_time
+                }
+            })
         else:
             return jsonify({'success': False, 'error': 'Model file not found'}), 500
         
@@ -646,6 +670,18 @@ def draw_validation_image(original_img, annotated_img, predictions, confidence_t
 @app.route('/start_testing', methods=['POST'])
 def start_testing():
     try:
+        print("Starting testing...")
+        start_time = time()
+        
+        # Create a timestamp-based folder for this test session
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        session_folder = os.path.join(RESULTS_FOLDER, f'test_session_{timestamp}')
+        os.makedirs(session_folder, exist_ok=True)
+        
+        # Create subfolders for annotated media
+        annotated_folder = os.path.join(session_folder, 'annotated_media')
+        os.makedirs(annotated_folder, exist_ok=True)
+        
         # Get the model path
         model_path = os.path.join(MODEL_DIR, 'weights/last.pt')
         if not os.path.exists(model_path):
@@ -653,74 +689,69 @@ def start_testing():
 
         # Load the model
         model = YOLO(model_path)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Get all test files
+        test_files = [f for f in os.listdir(TEST_FOLDER) if allowed_file(f)]
         results = []
         
-        # Create directories for results
-        results_dir = os.path.join(app.static_folder, f'results_{timestamp}')
-        annotated_dir = os.path.join(results_dir, 'annotated')
-        os.makedirs(annotated_dir, exist_ok=True)
-        
-        # Process test files
-        test_files = [f for f in os.listdir(TEST_FOLDER) if allowed_file(f)]
-        
+        # Process each test file
         for file in test_files:
             file_path = os.path.join(TEST_FOLDER, file)
             
             if file.lower().endswith(('.mp4', '.avi', '.mov')):
                 # Process video
                 cap = cv2.VideoCapture(file_path)
-                fps = cap.get(cv2.CAP_PROP_FPS)
+                
+                # Get video properties
+                fps = int(cap.get(cv2.CAP_PROP_FPS))
                 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                 
                 # Create video writer
-                output_path = os.path.join(annotated_dir, f'annotated_{file}')
-                out = cv2.VideoWriter(output_path, 
-                                    cv2.VideoWriter_fourcc(*'mp4v'), 
-                                    fps, (width, height))
+                output_path = os.path.join(annotated_folder, f'annotated_{file}')
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
                 
                 frame_count = 0
-                while cap.isOpened():
+                while True:
                     ret, frame = cap.read()
                     if not ret:
                         break
                         
                     # Run inference
                     prediction = model(frame)
-                    annotated_frame = frame.copy()
                     
                     # Process predictions for this frame
                     for pred in prediction:
                         boxes = pred.boxes
                         for box in boxes:
-                            conf = float(box.conf)
-                            if conf >= 0.6:  # Confidence threshold
-                                class_id = int(box.cls)
-                                class_name = model.names[class_id]
+                            confidence = float(box.conf)
+                            if confidence >= CONFIDENCE_THRESHOLD:
+                                # Get coordinates and crop
                                 bbox = box.xyxy.tolist()[0]
+                                x1, y1, x2, y2 = map(int, bbox)
+                                crop_img = frame[y1:y2, x1:x2]
+                                
+                                # Run OCR on crop
+                                ocr_text = run_ocr_on_crop(crop_img)
                                 
                                 # Add to results
                                 results.append({
                                     'filename': file,
                                     'frame': frame_count,
-                                    'class': class_name,
-                                    'confidence': conf,
-                                    'bbox': bbox
+                                    'class': model.names[int(box.cls)],
+                                    'confidence': confidence,
+                                    'bbox': bbox,
+                                    'ocr_text': ocr_text
                                 })
                                 
                                 # Draw on frame
-                                cv2.rectangle(annotated_frame, 
-                                            (int(bbox[0]), int(bbox[1])), 
-                                            (int(bbox[2]), int(bbox[3])), 
-                                            (0, 255, 0), 2)
-                                cv2.putText(annotated_frame, 
-                                          f'{class_name} {conf:.2f}',
-                                          (int(bbox[0]), int(bbox[1]-10)),
-                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
-                                          (0, 255, 0), 2)
+                                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(frame, f"{model.names[int(box.cls)]}: {ocr_text}", 
+                                          (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                     
-                    out.write(annotated_frame)
+                    # Write the annotated frame
+                    out.write(frame)
                     frame_count += 1
                 
                 cap.release()
@@ -728,73 +759,140 @@ def start_testing():
                 
             else:
                 # Process image
-                prediction = model(file_path)
                 img = cv2.imread(file_path)
+                prediction = model(img)
                 annotated_img = img.copy()
                 
                 # Process predictions
                 for pred in prediction:
                     boxes = pred.boxes
                     for box in boxes:
-                        conf = float(box.conf)
-                        if conf >= 0.6:  # Confidence threshold
-                            class_id = int(box.cls)
-                            class_name = model.names[class_id]
+                        confidence = float(box.conf)
+                        if confidence >= CONFIDENCE_THRESHOLD:
+                            # Get coordinates and crop
                             bbox = box.xyxy.tolist()[0]
+                            x1, y1, x2, y2 = map(int, bbox)
+                            crop_img = img[y1:y2, x1:x2]
+                            
+                            # Run OCR on crop
+                            ocr_text = run_ocr_on_crop(crop_img)
                             
                             # Add to results
                             results.append({
                                 'filename': file,
-                                'class': class_name,
-                                'confidence': conf,
-                                'bbox': bbox
+                                'class': model.names[int(box.cls)],
+                                'confidence': confidence,
+                                'bbox': bbox,
+                                'ocr_text': ocr_text
                             })
                             
                             # Draw on image
-                            cv2.rectangle(annotated_img, 
-                                        (int(bbox[0]), int(bbox[1])), 
-                                        (int(bbox[2]), int(bbox[3])), 
-                                        (0, 255, 0), 2)
-                            cv2.putText(annotated_img, 
-                                      f'{class_name} {conf:.2f}',
-                                      (int(bbox[0]), int(bbox[1]-10)),
-                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
-                                      (0, 255, 0), 2)
+                            cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                            cv2.putText(annotated_img, f"{model.names[int(box.cls)]}: {ocr_text}", 
+                                      (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                 
                 # Save annotated image
-                output_path = os.path.join(annotated_dir, f'annotated_{file}')
+                output_path = os.path.join(annotated_folder, f'annotated_{file}')
                 cv2.imwrite(output_path, annotated_img)
         
-        # Create Excel file
+        # Create Excel file with results
         if results:
             df = pd.DataFrame(results)
-            excel_path = os.path.join(results_dir, f'test_results_{timestamp}.xlsx')
-            df.to_excel(excel_path, index=False)
+            excel_path = os.path.join(session_folder, f'test_results_{timestamp}.xlsx')
             
-            # Create ZIP file
-            zip_path = os.path.join(app.static_folder, f'all_results_{timestamp}.zip')
-            with zipfile.ZipFile(zip_path, 'w') as zipf:
-                # Add Excel file
-                zipf.write(excel_path, os.path.basename(excel_path))
-                # Add annotated media
-                for root, _, files in os.walk(annotated_dir):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.join('annotated', file)
-                        zipf.write(file_path, arcname)
-            
-            # Store the path for download
-            app.config['LATEST_RESULTS'] = zip_path
-            
-            # Clean up temporary files
-            shutil.rmtree(results_dir)
-            
-            return jsonify({'success': True, 'message': 'Testing completed'})
-        else:
-            return jsonify({'success': False, 'message': 'No detections above confidence threshold'})
+            with pd.ExcelWriter(excel_path, engine='xlsxwriter') as writer:
+                # Detailed results
+                df.to_excel(writer, sheet_name='Detailed Results', index=False)
+                
+                # Summary sheet
+                summary_data = []
+                for file in df['filename'].unique():
+                    file_data = df[df['filename'] == file]
+                    summary = {
+                        'File': file,
+                        'Total Detections': len(file_data),
+                        'Classes Detected': ', '.join(file_data['class'].unique()),
+                        'Average Confidence': file_data['confidence'].mean()
+                    }
+                    summary_data.append(summary)
+                
+                summary_df = pd.DataFrame(summary_data)
+                summary_df.to_excel(writer, sheet_name='Summary', index=False)
+        
+        # Calculate testing time
+        testing_time = time() - start_time
+        hours = int(testing_time // 3600)
+        minutes = int((testing_time % 3600) // 60)
+        seconds = int(testing_time % 60)
+        
+        # Add timing information to Excel
+        timing_df = pd.DataFrame([{
+            'Testing Start Time': datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S'),
+            'Testing Duration': f"{hours:02d}:{minutes:02d}:{seconds:02d}",
+            'Total Time (seconds)': testing_time
+        }])
+        with pd.ExcelWriter(excel_path, mode='a', engine='openpyxl') as writer:
+            timing_df.to_excel(writer, sheet_name='Timing Information', index=False)
+        
+        # Store session info in app config
+        app.config['LATEST_SESSION'] = {
+            'timestamp': timestamp,
+            'folder': session_folder,
+            'testing_time': {
+                'hours': hours,
+                'minutes': minutes,
+                'seconds': seconds,
+                'total_seconds': testing_time
+            }
+        }
+        
+        print(f"Testing completed in {hours:02d}:{minutes:02d}:{seconds:02d}")
+        return jsonify({
+            'success': True,
+            'message': f'Testing completed in {hours:02d}:{minutes:02d}:{seconds:02d}',
+            'session_id': timestamp,
+            'testing_time': {
+                'hours': hours,
+                'minutes': minutes,
+                'seconds': seconds,
+                'total_seconds': testing_time
+            }
+        })
         
     except Exception as e:
         print(f"Error in testing: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/download_results')
+def download_results():
+    try:
+        if 'LATEST_SESSION' not in app.config:
+            return jsonify({'error': 'No test results available'}), 404
+        
+        session_info = app.config['LATEST_SESSION']
+        session_folder = session_info['folder']
+        timestamp = session_info['timestamp']
+        
+        # Create ZIP file
+        zip_path = os.path.join(RESULTS_FOLDER, f'test_results_{timestamp}.zip')
+        
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            # Walk through the session folder and add all files
+            for folder_path, _, filenames in os.walk(session_folder):
+                for filename in filenames:
+                    file_path = os.path.join(folder_path, filename)
+                    arcname = os.path.relpath(file_path, session_folder)
+                    zipf.write(file_path, arcname)
+        
+        return send_file(
+            zip_path,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f'test_results_{timestamp}.zip'
+        )
+        
+    except Exception as e:
+        print(f"Error creating ZIP file: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/download_results/<filename>')
@@ -804,51 +902,130 @@ def download_file(filename):
 @app.route('/download_all_results')
 def download_all_results():
     try:
-        # Create a ZIP file containing all results
+        # Create necessary directories if they don't exist
         output_dir = os.path.join(app.static_folder, 'output')
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Get the latest session info
+        if 'LATEST_SESSION' not in app.config:
+            return jsonify({'error': 'No test results available'}), 404
+            
+        session_info = app.config['LATEST_SESSION']
+        session_folder = session_info['folder']
+
+        # Create a temporary directory for organizing files
+        temp_dir = os.path.join(output_dir, 'temp_zip')
+        os.makedirs(temp_dir, exist_ok=True)
+
+        # Create subdirectories in temp folder
+        excel_dir = os.path.join(temp_dir, 'excel_results')
+        media_dir = os.path.join(temp_dir, 'annotated_media')
+        os.makedirs(excel_dir, exist_ok=True)
+        os.makedirs(media_dir, exist_ok=True)
+
+        # Copy all files from the session folder to temp directory
+        for root, _, files in os.walk(session_folder):
+            for file in files:
+                src_path = os.path.join(root, file)
+                # Determine destination based on file type
+                if file.endswith('.xlsx'):
+                    dst_path = os.path.join(excel_dir, file)
+                else:  # Media files (images and videos)
+                    dst_path = os.path.join(media_dir, file)
+                
+                # Create subdirectories if needed
+                os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+                shutil.copy2(src_path, dst_path)
+
+        # Create the ZIP file
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         zip_path = os.path.join(output_dir, f'all_results_{timestamp}.zip')
-        
+
         with zipfile.ZipFile(zip_path, 'w') as zipf:
-            for file in os.listdir(output_dir):
-                if file.startswith(('annotated_', 'test_results_')):
-                    file_path = os.path.join(output_dir, file)
-                    zipf.write(file_path, file)
-        
+            # Add files from temp directory to ZIP
+            for folder_path, _, filenames in os.walk(temp_dir):
+                for filename in filenames:
+                    file_path = os.path.join(folder_path, filename)
+                    arcname = os.path.relpath(file_path, temp_dir)
+                    zipf.write(file_path, arcname)
+
+        # Clean up temporary directory
+        shutil.rmtree(temp_dir)
+
+        # Send the ZIP file
         return send_file(
             zip_path,
             mimetype='application/zip',
             as_attachment=True,
             download_name=f'all_results_{timestamp}.zip'
         )
-        
+
     except Exception as e:
+        print(f"Error creating ZIP file: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/download_results')
-def download_results():
-    try:
-        if 'LATEST_RESULTS' not in app.config:
-            return jsonify({'error': 'No results available'}), 404
-            
-        excel_path = app.config['LATEST_RESULTS']
-        if not os.path.exists(excel_path):
-            return jsonify({'error': 'Results file not found'}), 404
-            
-        return send_file(
-            excel_path,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name=os.path.basename(excel_path)
-        )
-        
-    except Exception as e:
-        print(f"Error downloading results: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+async def async_read_image(path):
+    """Async function to read an image"""
+    async with aiofiles.open(path, mode='rb') as f:
+        img_bytes = await f.read()
+        arr = np.frombuffer(img_bytes, np.uint8)
+        return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+def run_ocr_on_crop(crop_img):
+    """OCR on cropped image"""
+    if crop_img is None or crop_img.size == 0:
+        return ""
+    gray_img = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
+    return pytesseract.image_to_string(gray_img).strip()
+
+async def process_detection_with_ocr(img, prediction, file_path, model):
+    """Process YOLO detection and run OCR"""
+    results = []
+    annotated_img = img.copy()
+    
+    for pred in prediction:
+        boxes = pred.boxes
+        for box in boxes:
+            conf = float(box.conf)
+            if conf >= CONFIDENCE_THRESHOLD:
+                class_id = int(box.cls)
+                class_name = model.names[class_id]
+                bbox = box.xyxy.tolist()[0]
+                
+                # Crop and OCR
+                x1, y1, x2, y2 = map(int, bbox)
+                crop_img = img[y1:y2, x1:x2]
+                ocr_text = run_ocr_on_crop(crop_img)
+                
+                # Add to results
+                results.append({
+                    'filename': os.path.basename(file_path),
+                    'class': class_name,
+                    'confidence': conf,
+                    'bbox': bbox,
+                    'text': ocr_text
+                })
+                
+                # Draw on image
+                cv2.rectangle(annotated_img, 
+                            (x1, y1), (x2, y2),
+                            (0, 255, 0), 2)
+                label = f'{class_name}: {ocr_text}'
+                cv2.putText(annotated_img, 
+                          label,
+                          (x1, y1-10),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                          (0, 255, 0), 2)
+    
+    return results, annotated_img
 
 @app.route('/delete_project', methods=['POST'])
 def delete_project():
     try:
+        # Define test directory
+        TEST_FOLDER = 'static/test'
+        os.makedirs(TEST_FOLDER, exist_ok=True)  # Ensure test folder exists
+        
         # List of directories to clean
         directories_to_clean = [
             'runs',
@@ -858,36 +1035,112 @@ def delete_project():
             'static/output',
             'static/verification',
             'annotations',
-            'static/test'
+            'static/test',  # Test folder where images/videos are stored
+            'static/test/crops',  # Cropped images from test folder
+            'static/test/annotated',  # Annotated results
+            'static/test/results'  # Test results including Excel files
         ]
         
         # List of files to delete
         files_to_delete = [
             'labels.txt',
-            'data.yaml'
+            'data.yaml',
+            'detection_results.xlsx'
         ]
         
         # Clean directories
         for directory in directories_to_clean:
-            if os.path.exists(directory):
-                shutil.rmtree(directory)
-                os.makedirs(directory, exist_ok=True)
+            dir_path = os.path.abspath(directory)
+            if os.path.exists(dir_path):
+                print(f"Deleting directory: {dir_path}")
+                try:
+                    shutil.rmtree(dir_path)
+                    os.makedirs(dir_path, exist_ok=True)  # Recreate empty directory
+                    print(f"Successfully cleaned {dir_path}")
+                except Exception as e:
+                    print(f"Error cleaning {dir_path}: {str(e)}")
         
         # Delete individual files
         for file in files_to_delete:
-            if os.path.exists(file):
-                os.remove(file)
+            file_path = os.path.abspath(file)
+            if os.path.exists(file_path):
+                print(f"Deleting file: {file_path}")
+                try:
+                    os.remove(file_path)
+                    print(f"Successfully deleted {file_path}")
+                except Exception as e:
+                    print(f"Error deleting {file_path}: {str(e)}")
         
+        print("Project deletion completed")
         return jsonify({
             'success': True,
             'message': 'Project data deleted successfully'
         })
         
     except Exception as e:
+        error_msg = f"Error deleting project data: {str(e)}"
+        print(f"Error in delete_project: {error_msg}")
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': error_msg
         }), 500
+
+@app.route('/retraining_progress')
+def retraining_progress():
+    try:
+        start_time = time()  # Start timing
+        
+        dataset_root = os.path.abspath(DATASET_ROOT)
+        yaml_path = os.path.join(dataset_root, 'data.yaml')
+        
+        # Load the existing model for retraining
+        existing_model_path = os.path.join(MODEL_DIR, 'weights/last.pt')
+        if not os.path.exists(existing_model_path):
+            return jsonify({'error': 'No existing model found for retraining'}), 404
+        
+        model = YOLO(existing_model_path)
+        results = model.train(
+            data=yaml_path,
+            epochs=100,
+            project='runs/detect',
+            name='retrain',
+            exist_ok=True
+        )
+        
+        training_time = time() - start_time  # Calculate training time
+        hours = int(training_time // 3600)
+        minutes = int((training_time % 3600) // 60)
+        seconds = int(training_time % 60)
+        
+        # Save the retrained model in a different directory
+        retrain_dir = 'runs/detect/retrain'
+        model_path = os.path.join(retrain_dir, 'weights/last.pt')
+
+        print(f"Retraining completed in {hours}h {minutes}m {seconds}s")
+        
+        if os.path.exists(model_path):
+            print(f"Retrained model saved at: {model_path}")
+            return jsonify({
+                'success': True, 
+                'message': f'Retraining completed in {hours}h {minutes}m {seconds}s', 
+                'model_path': model_path,
+                'training_time': {
+                    'hours': hours,
+                    'minutes': minutes,
+                    'seconds': seconds,
+                    'total_seconds': training_time
+                }
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Model file not found'}), 500
+        
+    except Exception as e:
+        print(f"Error in retraining_progress: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# Add with other configuration constants
+RESULTS_FOLDER = 'static/results'
+os.makedirs(RESULTS_FOLDER, exist_ok=True)
 
 if __name__ == '__main__':
     app.run(debug=True, use_reloader=False)  # Disable reloader
