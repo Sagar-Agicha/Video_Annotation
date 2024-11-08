@@ -22,6 +22,9 @@ const CANVAS_CONTAINER_HEIGHT = 600;
 let selectedVideoFile = null;
 let uploadedVideoFilename = null;
 
+let notificationQueue = [];
+let isNotificationDisplaying = false;
+
 function initializeApp() {
     console.log("Initializing app...");
     loadImages();
@@ -263,37 +266,31 @@ async function saveAnnotation() {
             return;
         }
 
-        console.log("Current annotation:", currentAnnotation);  // Debug log
-
-        // Save the current annotation
         if (currentAnnotation) {
-            // Store the original coordinates before any modifications
+            // Convert to YOLO format (center coordinates)
+            const x_center = currentAnnotation.x + (currentAnnotation.width / 2);
+            const y_center = currentAnnotation.y + (currentAnnotation.height / 2);
+            
             const annotation = {
-                x: currentAnnotation.x,
-                y: currentAnnotation.y,
+                x: x_center,          // Center X instead of top-left X
+                y: y_center,          // Center Y instead of top-left Y
                 width: currentAnnotation.width,
                 height: currentAnnotation.height,
                 class: className
             };
 
-            // Initialize annotations array if it doesn't exist
             if (!images[currentImageIndex].annotations) {
                 images[currentImageIndex].annotations = [];
             }
 
-            // Add the annotation to the array
             images[currentImageIndex].annotations.push(annotation);
-            console.log("Added annotation:", annotation);  // Debug log
-            console.log("All annotations:", images[currentImageIndex].annotations);  // Debug log
-
+            
             // Save to file
-            await saveAnnotationsToFile();
-
-            // Hide popup and reset current annotation
+            saveAnnotationsToFile();
+            
             document.getElementById('classPopup').style.display = 'none';
             currentAnnotation = null;
-
-            // Redraw all annotations
+            
             drawAnnotations();
             updateAnnotationsList();
         }
@@ -426,21 +423,19 @@ function drawAnnotations() {
         images[currentImageIndex].annotations.forEach(ann => {
             ctx.strokeStyle = '#00ff00';  // Green color
             ctx.lineWidth = 2;
-            ctx.strokeRect(
-                ann.x * canvas.width,
-                ann.y * canvas.height,
-                ann.width * canvas.width,
-                ann.height * canvas.height
-            );
+            
+            // Convert from center to corner coordinates for drawing
+            const x = (ann.x - ann.width/2) * canvas.width;
+            const y = (ann.y - ann.height/2) * canvas.height;
+            const w = ann.width * canvas.width;
+            const h = ann.height * canvas.height;
+            
+            ctx.strokeRect(x, y, w, h);
 
             // Draw label
             ctx.fillStyle = '#00ff00';
             ctx.font = '12px Arial';
-            ctx.fillText(
-                ann.class,
-                ann.x * canvas.width,
-                ann.y * canvas.height - 5
-            );
+            ctx.fillText(ann.class, x, y - 5);
         });
     }
 }
@@ -739,68 +734,60 @@ async function clearAnnotations() {
     }
 }
 
-function showNotification(message, type = 'success') {
-    const notification = document.createElement('div');
-    notification.className = `notification ${type}`;
-    notification.textContent = message;
+function showNotification(message, type = 'info') {
+    // Add notification to queue
+    notificationQueue.push({ message, type });
     
-    // Add styles to the notification
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 15px 25px;
-        border-radius: 4px;
-        font-size: 16px;
-        font-weight: 500;
-        z-index: 9999;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        animation: slideIn 0.3s ease-out;
-    `;
+    // If no notification is currently showing, display the next one
+    if (!isNotificationDisplaying) {
+        displayNextNotification();
+    }
+}
 
-    // Set colors based on type
-    switch (type) {
-        case 'success':
-            notification.style.backgroundColor = '#4caf50';
-            notification.style.color = 'white';
-            break;
-        case 'error':
-            notification.style.backgroundColor = '#f44336';
-            notification.style.color = 'white';
-            break;
-        case 'info':
-            notification.style.backgroundColor = '#2196F3';
-            notification.style.color = 'white';
-            break;
-        default:
-            notification.style.backgroundColor = '#333';
-            notification.style.color = 'white';
+function displayNextNotification() {
+    if (notificationQueue.length === 0) {
+        isNotificationDisplaying = false;
+        return;
     }
 
+    isNotificationDisplaying = true;
+    const { message, type } = notificationQueue.shift();
+
+    // Remove any existing notifications
+    const existingNotification = document.querySelector('.notification');
+    if (existingNotification) {
+        existingNotification.remove();
+    }
+
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    
+    // Add close button
+    const closeButton = document.createElement('span');
+    closeButton.className = 'notification-close';
+    closeButton.innerHTML = '×';
+    closeButton.onclick = () => {
+        notification.remove();
+        isNotificationDisplaying = false;
+        displayNextNotification();
+    };
+
+    // Add message
+    const messageSpan = document.createElement('span');
+    messageSpan.textContent = message;
+
+    notification.appendChild(messageSpan);
+    notification.appendChild(closeButton);
     document.body.appendChild(notification);
 
-    // Add animation keyframes
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-    `;
-    document.head.appendChild(style);
-
-    // Remove after 3 seconds with fade out animation
+    // Auto remove after 3 seconds
     setTimeout(() => {
-        notification.style.animation = 'fadeOut 0.3s ease-out';
-        notification.addEventListener('animationend', () => {
+        if (notification.parentElement) {
             notification.remove();
-        });
+            isNotificationDisplaying = false;
+            displayNextNotification();
+        }
     }, 3000);
 }
 
@@ -1263,7 +1250,7 @@ async function downloadResults() {
     try {
         showNotification('Preparing download...', 'info');
         
-        const response = await fetch('/download_results');
+        const response = await fetch('/download_all_results');
         
         if (!response.ok) {
             throw new Error('Failed to download results');
@@ -1271,7 +1258,7 @@ async function downloadResults() {
         
         // Get the filename from the Content-Disposition header
         const contentDisposition = response.headers.get('Content-Disposition');
-        let filename = 'test_results.xlsx';
+        let filename = 'all_results.zip';
         if (contentDisposition) {
             const match = contentDisposition.match(/filename="(.+)"/);
             if (match) {
@@ -1279,7 +1266,7 @@ async function downloadResults() {
             }
         }
         
-        // Convert response to blob and download
+        // Download the zip file
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
