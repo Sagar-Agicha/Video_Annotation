@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory, Response
+from flask import Flask, render_template, request, jsonify, send_from_directory, Response, send_file
 import os
 from werkzeug.utils import secure_filename
 from pathlib import Path
@@ -11,6 +11,9 @@ from sklearn.model_selection import train_test_split
 from ultralytics import YOLO
 import torch
 import yaml
+import numpy as np
+import pandas as pd
+from datetime import datetime
 
 
 app = Flask(__name__)
@@ -19,7 +22,6 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'static/uploads'
 VIDEO_FOLDER = 'static/videos'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4', 'avi', 'mov', 'wmv'}
-print("ALLOWED_EXTENSIONS: ", ALLOWED_EXTENSIONS)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['VIDEO_FOLDER'] = VIDEO_FOLDER
@@ -246,6 +248,32 @@ def get_annotations(image_file):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def add_noise(image):
+    # Gaussian Noise
+    def gaussian_noise(img):
+        mean = 0
+        sigma = 25
+        noise = np.random.normal(mean, sigma, img.shape)
+        noisy = img + noise
+        return np.clip(noisy, 0, 255).astype(np.uint8)
+    
+    # Salt and Pepper Noise
+    def salt_pepper_noise(img):
+        prob = 0.05
+        noisy = np.copy(img)
+        # Salt
+        salt_mask = np.random.random(img.shape) < prob/2
+        noisy[salt_mask] = 255
+        # Pepper
+        pepper_mask = np.random.random(img.shape) < prob/2
+        noisy[pepper_mask] = 0
+        return noisy
+
+    return [
+        gaussian_noise(image),
+        salt_pepper_noise(image)
+    ]
+
 @app.route('/prepare_training', methods=['POST'])
 def prepare_training():
     try:
@@ -265,14 +293,12 @@ def prepare_training():
                 with open(os.path.join(ANNOTATIONS_FOLDER, ann_file), 'r') as f:
                     for line in f:
                         class_num = int(line.split()[0])
-                        class_set.add(class_num - 1)  # Subtract 1 to convert to 0-based index
+                        class_set.add(class_num)
         
         # Read labels.txt to get class names
         if os.path.exists(LABELS_FILE):
             with open(LABELS_FILE, 'r') as f:
                 class_names = {i: name.strip() for i, name in enumerate(f.readlines())}
-        
-        print(f"Found classes: {class_names}")  # Debug print
         
         # Create data.yaml file
         yaml_content = {
@@ -283,8 +309,6 @@ def prepare_training():
             'nc': len(class_names),
             'names': [class_names[i] for i in range(len(class_names))]
         }
-
-        print(f"YAML content: {yaml_content}")  # Debug print
 
         yaml_path = os.path.join(DATASET_ROOT, 'data.yaml')
         with open(yaml_path, 'w') as f:
@@ -297,36 +321,56 @@ def prepare_training():
         train_files, temp_files = train_test_split(image_files, train_size=0.7, random_state=42)
         valid_files, test_files = train_test_split(temp_files, train_size=0.67, random_state=42)
 
-        def copy_files(files, split):
+        def copy_files_with_augmentation(files, split):
+            saved_count = 0
             for img_file in files:
-                # Copy image
+                # Copy original image
                 src_img = os.path.join(app.config['UPLOAD_FOLDER'], img_file)
-                dst_img = os.path.join(DATASET_ROOT, split, 'images', img_file)
-                shutil.copy2(src_img, dst_img)
-
-                # Copy and adjust annotation if it exists
                 base_name = os.path.splitext(img_file)[0]
+                ext = os.path.splitext(img_file)[1]
+
+                # Read original image
+                img = cv2.imread(src_img)
+                if img is None:
+                    continue
+
+                # Save original image
+                dst_img = os.path.join(DATASET_ROOT, split, 'images', f"{base_name}_orig{ext}")
+                cv2.imwrite(dst_img, img)
+                saved_count += 1
+
+                # Copy original annotation
                 ann_file = f"{base_name}.txt"
                 src_ann = os.path.join(ANNOTATIONS_FOLDER, ann_file)
                 if os.path.exists(src_ann):
-                    dst_ann = os.path.join(DATASET_ROOT, split, 'labels', ann_file)
-                    # Adjust class numbers to start from 0
-                    with open(src_ann, 'r') as f_in, open(dst_ann, 'w') as f_out:
-                        for line in f_in:
-                            parts = line.strip().split()
-                            class_num = int(parts[0])
-                            # Subtract 1 from class number
-                            adjusted_line = f"{class_num - 1} {' '.join(parts[1:])}\n"
-                            f_out.write(adjusted_line)
+                    dst_ann = os.path.join(DATASET_ROOT, split, 'labels', f"{base_name}_orig.txt")
+                    shutil.copy2(src_ann, dst_ann)
 
-        # Copy files to respective splits
-        copy_files(train_files, 'train')
-        copy_files(valid_files, 'valid')
-        copy_files(test_files, 'test')
+                # Generate and save augmented images
+                noisy_images = add_noise(img)
+                for idx, noisy_img in enumerate(noisy_images):
+                    # Save augmented image
+                    aug_img_path = os.path.join(DATASET_ROOT, split, 'images', 
+                                              f"{base_name}_aug{idx}{ext}")
+                    cv2.imwrite(aug_img_path, noisy_img)
+                    saved_count += 1
+
+                    # Copy annotation file for augmented image
+                    if os.path.exists(src_ann):
+                        aug_ann_path = os.path.join(DATASET_ROOT, split, 'labels',
+                                                  f"{base_name}_aug{idx}.txt")
+                        shutil.copy2(src_ann, aug_ann_path)
+
+            return saved_count
+
+        # Copy files to respective splits with augmentation
+        train_count = copy_files_with_augmentation(train_files, 'train')
+        valid_count = copy_files_with_augmentation(valid_files, 'valid')
+        test_count = copy_files_with_augmentation(test_files, 'test')
 
         return jsonify({
             'success': True,
-            'message': f'Dataset created with {len(train_files)} training, {len(valid_files)} validation, and {len(test_files)} test images'
+            'message': f'Dataset created with {train_count} training, {valid_count} validation, and {test_count} test images (including augmentations)'
         })
 
     except Exception as e:
@@ -457,25 +501,39 @@ def start_process():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# Add these constants at the top of your file with other configurations
+MODEL_DIR = 'runs/detect/train'
+os.makedirs(MODEL_DIR, exist_ok=True)
+
 @app.route('/training_progress')
 def training_progress():
-    def generate():
-        try:
-            # Disable reloader for this process
-            if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-                dataset_root = os.path.abspath(DATASET_ROOT)
-                yaml_path = os.path.join(dataset_root, 'data.yaml')
-                
-                model = YOLO("C://Users/DELL/Desktop/Galaxy/VIdeo Annotations/yolo11n.pt")
-                results = model.train(data=yaml_path, epochs=100)
-
-                return jsonify({'status': 'completed'})
-            
-        except Exception as e:
-            print(f"Error in training_progress: {str(e)}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-
-    return Response(generate(), mimetype='text/event-stream')
+    try:
+        # Disable reloader for this process
+        dataset_root = os.path.abspath(DATASET_ROOT)
+        yaml_path = os.path.join(dataset_root, 'data.yaml')
+        
+        # Set the specific project and name for training
+        model = YOLO("yolo11m.pt")
+        results = model.train(
+            data=yaml_path,
+            epochs=100,
+            project='runs/detect',  # project folder
+            name='train',          # experiment name (will overwrite if exists)
+            exist_ok=True          # overwrite existing experiment
+        )
+        
+        # The model will now always be saved at runs/detect/train/weights/last.pt
+        model_path = os.path.join(MODEL_DIR, 'weights/last.pt')
+        
+        if os.path.exists(model_path):
+            print(f"Model saved at: {model_path}")
+            return jsonify({'success': True, 'message': 'Training completed', 'model_path': model_path})
+        else:
+            return jsonify({'success': False, 'error': 'Model file not found'}), 500
+        
+    except Exception as e:
+        print(f"Error in training_progress: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/save_class', methods=['POST'])
 def save_class():
@@ -505,6 +563,113 @@ def save_class():
         return jsonify({'success': True, 'message': f'Class {class_name} saved successfully'})
     except Exception as e:
         print(f"Error in save_class: {str(e)}")  # Debug print
+        return jsonify({'error': str(e)}), 500
+
+# Add these global variables at the top with other configurations
+TEST_FOLDER = 'static/test'
+os.makedirs(TEST_FOLDER, exist_ok=True)
+
+@app.route('/upload_test_files', methods=['POST'])
+def upload_test_files():
+    print("Received test file upload request")  # Debug print
+    
+    try:
+        if 'files[]' not in request.files:
+            print("No files in request")  # Debug print
+            return jsonify({'error': 'No files provided'}), 400
+        
+        files = request.files.getlist('files[]')
+        uploaded_files = []
+        
+        # Create test folder if it doesn't exist
+        os.makedirs(TEST_FOLDER, exist_ok=True)
+        
+        for file in files:
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(TEST_FOLDER, filename)
+                file.save(filepath)
+                uploaded_files.append(filename)
+                print(f"Saved test file: {filepath}")  # Debug print
+        
+        response = {
+            'success': True,
+            'message': f'Successfully uploaded {len(uploaded_files)} files',
+            'files': uploaded_files
+        }
+        print("Upload response:", response)  # Debug print
+        return jsonify(response)
+    
+    except Exception as e:
+        print(f"Error in upload_test_files: {str(e)}")  # Debug print
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/start_testing', methods=['POST'])
+def start_testing():
+    try:
+        # Get the model path
+        model_path = os.path.join(MODEL_DIR, 'weights/last.pt')
+        if not os.path.exists(model_path):
+            return jsonify({'error': 'Model not found'}), 404
+
+        # Load the model
+        model = YOLO(model_path)
+        
+        # Get all test files
+        test_files = [f for f in os.listdir(TEST_FOLDER) if allowed_file(f)]
+        results = []
+        
+        # Process each test file
+        for file in test_files:
+            file_path = os.path.join(TEST_FOLDER, file)
+            # Run inference
+            prediction = model(file_path)
+            
+            # Process predictions
+            for pred in prediction:
+                boxes = pred.boxes
+                for box in boxes:
+                    results.append({
+                        'filename': file,
+                        'class': model.names[int(box.cls)],
+                        'confidence': float(box.conf),
+                        'bbox': box.xyxy.tolist()[0]
+                    })
+        
+        # Create Excel file
+        df = pd.DataFrame(results)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        excel_path = os.path.join(app.static_folder, f'test_results_{timestamp}.xlsx')
+        df.to_excel(excel_path, index=False)
+        
+        # Store the path for download
+        app.config['LATEST_RESULTS'] = excel_path
+        
+        return jsonify({'success': True, 'message': 'Testing completed'})
+        
+    except Exception as e:
+        print(f"Error in testing: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/download_results')
+def download_results():
+    try:
+        if 'LATEST_RESULTS' not in app.config:
+            return jsonify({'error': 'No results available'}), 404
+            
+        excel_path = app.config['LATEST_RESULTS']
+        if not os.path.exists(excel_path):
+            return jsonify({'error': 'Results file not found'}), 404
+            
+        return send_file(
+            excel_path,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=os.path.basename(excel_path)
+        )
+        
+    except Exception as e:
+        print(f"Error downloading results: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':

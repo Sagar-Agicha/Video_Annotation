@@ -1,6 +1,6 @@
 task: detect
 mode: train
-model: C://Users/DELL/Desktop/Galaxy/VIdeo Annotations/yolo11n.pt
+model: yolo11m.pt
 data: C:\Users\DELL\Desktop\Galaxy\VIdeo Annotations\dataset\data.yaml
 epochs: 100
 time: null
@@ -12,9 +12,9 @@ save_period: -1
 cache: false
 device: null
 workers: 8
-project: null
+project: runs/detect
 name: train
-exist_ok: false
+exist_ok: true
 pretrained: true
 optimizer: auto
 verbose: true

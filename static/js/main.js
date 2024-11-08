@@ -68,7 +68,6 @@ function initializeApp() {
     }
     
     // Training buttons
-    document.getElementById('startTraining').addEventListener('click', createDatabase);
     document.getElementById('startProcess').addEventListener('click', startProcess);
 
     // Add video details button listener
@@ -80,6 +79,14 @@ function initializeApp() {
             alert('Please upload a video first');
         }
     });
+
+    // Test section controls
+    document.getElementById('testImage').addEventListener('change', uploadTestFiles);
+    document.getElementById('testVideo').addEventListener('change', uploadTestFiles);
+    document.getElementById('startTesting').addEventListener('click', startTesting);
+
+    // Add download results button listener
+    document.getElementById('downloadResults').addEventListener('click', downloadResults);
 }
 
 async function uploadImages(e) {
@@ -656,91 +663,43 @@ async function loadAnnotationsForImage(imageFileName) {
     return [];
 }
 
-// Rename existing startTraining function to createDatabase
-async function createDatabase() {
-    try {
-        // Save current annotations first
-        await saveAnnotationsToFile();
-        
-        const response = await fetch('/prepare_training', {
-            method: 'POST'
-        });
-        
-        const result = await response.json();
-        
-        if (response.ok) {
-            alert(result.message);
-        } else {
-            throw new Error(result.error || 'Failed to prepare database');
-        }
-    } catch (error) {
-        console.error('Error:', error);
-        alert('Error preparing database: ' + error.message);
-    }
-}
-
-// Replace the existing startProcess function with this:
 async function startProcess() {
     try {
-        // Get progress container
-        const progressContainer = document.getElementById('trainingProgress');
-        if (!progressContainer) {
-            throw new Error('Training progress container not found');
-        }
-
-        // Show progress container and reset values
-        progressContainer.style.display = 'block';
-        document.getElementById('currentEpoch').textContent = '0';
-        document.getElementById('totalEpochs').textContent = '0';
-        document.getElementById('map50').textContent = '0.000';
-        document.getElementById('map50-95').textContent = '0.000';
-        document.getElementById('precision').textContent = '0.000';
-        document.getElementById('recall').textContent = '0.000';
-
-        // Make the POST request to start training
-        const response = await fetch('/start_process', {
+        // First, create the database
+        showNotification('Creating dataset...', 'info');
+        
+        const prepareResponse = await fetch('/prepare_training', {
             method: 'POST'
         });
-
-        if (!response.ok) {
-            throw new Error('Failed to start training process');
+        
+        if (!prepareResponse.ok) {
+            throw new Error('Failed to prepare training data');
         }
-
-        // Create EventSource for progress updates
-        const eventSource = new EventSource('/training_progress');
-
-        eventSource.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            
-            // Update progress display
-            document.getElementById('currentEpoch').textContent = data.epoch;
-            document.getElementById('totalEpochs').textContent = data.total_epochs;
-            document.getElementById('map50').textContent = data.metrics.mAP50.toFixed(3);
-            document.getElementById('map50-95').textContent = data.metrics['mAP50-95'].toFixed(3);
-            document.getElementById('precision').textContent = data.metrics.precision.toFixed(3);
-            document.getElementById('recall').textContent = data.metrics.recall.toFixed(3);
-
-            // Close connection when training is complete
-            if (data.epoch === data.total_epochs) {
-                eventSource.close();
-                showNotification('Training completed successfully', 'success');
-            }
-        };
-
-        eventSource.onerror = function(error) {
-            console.error('EventSource failed:', error);
-            eventSource.close();
-            showNotification('Error during training', 'error');
-            progressContainer.style.display = 'none';
-        };
-
+        
+        const prepareResult = await prepareResponse.json();
+        if (!prepareResult.success) {
+            throw new Error(prepareResult.error || 'Dataset creation failed');
+        }
+        
+        showNotification('Dataset created, starting training...', 'info');
+        
+        // Then start the training
+        const trainingResponse = await fetch('/training_progress');
+        
+        if (!trainingResponse.ok) {
+            throw new Error('Training failed');
+        }
+        
+        const trainingResult = await trainingResponse.json();
+        if (trainingResult.success) {
+            showNotification('Training completed successfully!', 'success');
+        } else {
+            throw new Error(trainingResult.error || 'Training failed');
+        }
+        
     } catch (error) {
-        console.error('Error:', error);
-        showNotification('Error starting training process: ' + error.message, 'error');
-        const progressContainer = document.getElementById('trainingProgress');
-        if (progressContainer) {
-            progressContainer.style.display = 'none';
-        }
+        console.error('Error in process:', error);
+        showNotification('Error: ' + error.message, 'error');
     }
 }
 
@@ -784,10 +743,64 @@ function showNotification(message, type = 'success') {
     const notification = document.createElement('div');
     notification.className = `notification ${type}`;
     notification.textContent = message;
+    
+    // Add styles to the notification
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 15px 25px;
+        border-radius: 4px;
+        font-size: 16px;
+        font-weight: 500;
+        z-index: 9999;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        animation: slideIn 0.3s ease-out;
+    `;
+
+    // Set colors based on type
+    switch (type) {
+        case 'success':
+            notification.style.backgroundColor = '#4caf50';
+            notification.style.color = 'white';
+            break;
+        case 'error':
+            notification.style.backgroundColor = '#f44336';
+            notification.style.color = 'white';
+            break;
+        case 'info':
+            notification.style.backgroundColor = '#2196F3';
+            notification.style.color = 'white';
+            break;
+        default:
+            notification.style.backgroundColor = '#333';
+            notification.style.color = 'white';
+    }
+
     document.body.appendChild(notification);
 
+    // Add animation keyframes
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+    `;
+    document.head.appendChild(style);
+
+    // Remove after 3 seconds with fade out animation
     setTimeout(() => {
-        notification.remove();
+        notification.style.animation = 'fadeOut 0.3s ease-out';
+        notification.addEventListener('animationend', () => {
+            notification.remove();
+        });
     }, 3000);
 }
 
@@ -1160,3 +1173,126 @@ document.getElementById('videoUpload').addEventListener('change', async function
         }
     }
 });
+
+async function uploadTestFiles(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    console.log("Starting test file upload...");  // Debug log
+    
+    const formData = new FormData();
+    for (let file of files) {
+        formData.append('files[]', file);
+        console.log("Adding file to upload:", file.name);  // Debug log
+    }
+    
+    try {
+        showNotification('Uploading test files...', 'info');
+        
+        const response = await fetch('/upload_test_files', {
+            method: 'POST',
+            body: formData
+        });
+        
+        console.log("Upload response status:", response.status);  // Debug log
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log("Upload result:", result);  // Debug log
+        
+        showNotification(`Successfully uploaded ${result.files.length} files`, 'success');
+        
+        // Reset the file input
+        e.target.value = '';
+        
+    } catch (error) {
+        console.error('Error uploading test files:', error);
+        showNotification('Error uploading test files: ' + error.message, 'error');
+    }
+}
+
+// Make sure the event listeners are properly set up
+document.addEventListener('DOMContentLoaded', function() {
+    console.log("Setting up test file upload listeners");  // Debug log
+    
+    const testImage = document.getElementById('testImage');
+    const testVideo = document.getElementById('testVideo');
+    
+    if (testImage) {
+        testImage.addEventListener('change', uploadTestFiles);
+        console.log("Test image upload listener added");  // Debug log
+    }
+    
+    if (testVideo) {
+        testVideo.addEventListener('change', uploadTestFiles);
+        console.log("Test video upload listener added");  // Debug log
+    }
+});
+
+async function startTesting() {
+    try {
+        const downloadBtn = document.getElementById('downloadResults');
+        downloadBtn.disabled = true;
+        showNotification('Starting test...', 'info');
+        
+        const response = await fetch('/start_testing', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showNotification('Testing completed successfully!', 'success');
+            downloadBtn.disabled = false;  // Enable download button after testing
+        } else {
+            throw new Error(result.error || 'Testing failed to start');
+        }
+    } catch (error) {
+        console.error('Error starting testing:', error);
+        showNotification('Error during testing: ' + error.message, 'error');
+    }
+}
+
+async function downloadResults() {
+    try {
+        showNotification('Preparing download...', 'info');
+        
+        const response = await fetch('/download_results');
+        
+        if (!response.ok) {
+            throw new Error('Failed to download results');
+        }
+        
+        // Get the filename from the Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'test_results.xlsx';
+        if (contentDisposition) {
+            const match = contentDisposition.match(/filename="(.+)"/);
+            if (match) {
+                filename = match[1];
+            }
+        }
+        
+        // Convert response to blob and download
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        showNotification('Results downloaded successfully!', 'success');
+    } catch (error) {
+        console.error('Error downloading results:', error);
+        showNotification('Error downloading results: ' + error.message, 'error');
+    }
+}

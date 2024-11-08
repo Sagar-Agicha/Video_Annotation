@@ -4,6 +4,6 @@ val: valid\images
 test: test\images
 nc: 3
 names:
-- unknown
+- company_name
 - company_logo
-- intro
+- Intro

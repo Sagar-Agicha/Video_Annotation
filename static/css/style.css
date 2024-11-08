@@ -14,7 +14,7 @@ body {
     gap: 20px;
     max-width: 1600px;
     margin: 0 auto;
-    height: calc(100vh - 40px);
+    min-height: calc(100vh - 40px);
 }
 
 /* Panel Styling */
@@ -433,17 +433,22 @@ h3 {
 }
 
 .train-btn {
-    background-color: #059669;
+    background-color: #28a745;
     color: white;
-    padding: 10px 20px;
     border: none;
     border-radius: 4px;
+    padding: 10px 20px;
+    font-weight: bold;
     cursor: pointer;
-    margin-left: 10px;
+    transition: background-color 0.3s ease;
 }
 
 .train-btn:hover {
-    background-color: #047857;
+    background-color: #218838;
+}
+
+.train-btn:active {
+    transform: scale(0.98);
 }
 
 #trainingProgress {
@@ -463,13 +468,8 @@ h3 {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    margin-top: 20px;
     padding: 10px;
-    background-color: #1f2937;
-    border-top: 1px solid #394867;
-    position: fixed;
-    bottom: 0;
-    right: 0;
-    width: 350px;
 }
 
 .left-controls {
@@ -726,4 +726,69 @@ h3 {
     font-size: 14px;
     color: #6b7280;
     font-weight: 500;
+}
+
+.test-section {
+    margin: 40px auto;
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background-color: white;
+    max-width: 1600px;
+    clear: both;
+}
+
+.test-controls {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 15px;
+}
+
+.test-section h2 {
+    color: #333;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #eee;
+}
+
+.upload-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 200px;
+}
+
+.upload-group label {
+    font-weight: 500;
+    color: #333;
+}
+
+.test-btn {
+    padding: 10px 20px;
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    min-width: 120px;
+}
+
+.test-btn:hover {
+    background-color: #1976D2;
+}
+
+.download-btn {
+    background-color: #4CAF50;
+}
+
+.download-btn:hover {
+    background-color: #45a049;
+}
+
+.download-btn:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
 }
