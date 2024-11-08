@@ -653,20 +653,16 @@ def start_testing():
 
         # Load the model
         model = YOLO(model_path)
-        
-        # Create output directory for annotated files
-        output_dir = os.path.join(app.static_folder, 'output')
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Get all test files
-        test_files = [f for f in os.listdir(TEST_FOLDER) if allowed_file(f)]
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         results = []
-        processed_files = []
         
-        CONFIDENCE_THRESHOLD = 0.6
+        # Create directories for results
+        results_dir = os.path.join(app.static_folder, f'results_{timestamp}')
+        annotated_dir = os.path.join(results_dir, 'annotated')
+        os.makedirs(annotated_dir, exist_ok=True)
         
-        validation_dir = os.path.join(app.static_folder, 'validation')
-        os.makedirs(validation_dir, exist_ok=True)
+        # Process test files
+        test_files = [f for f in os.listdir(TEST_FOLDER) if allowed_file(f)]
         
         for file in test_files:
             file_path = os.path.join(TEST_FOLDER, file)
@@ -678,13 +674,14 @@ def start_testing():
                 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                 
-                # Setup video writer
-                output_video_path = os.path.join(output_dir, f'annotated_{file}')
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
+                # Create video writer
+                output_path = os.path.join(annotated_dir, f'annotated_{file}')
+                out = cv2.VideoWriter(output_path, 
+                                    cv2.VideoWriter_fourcc(*'mp4v'), 
+                                    fps, (width, height))
                 
                 frame_count = 0
-                while True:
+                while cap.isOpened():
                     ret, frame = cap.read()
                     if not ret:
                         break
@@ -697,133 +694,104 @@ def start_testing():
                     for pred in prediction:
                         boxes = pred.boxes
                         for box in boxes:
-                            confidence = float(box.conf)
-                            if confidence >= CONFIDENCE_THRESHOLD:
+                            conf = float(box.conf)
+                            if conf >= 0.6:  # Confidence threshold
+                                class_id = int(box.cls)
+                                class_name = model.names[class_id]
+                                bbox = box.xyxy.tolist()[0]
+                                
                                 # Add to results
                                 results.append({
                                     'filename': file,
                                     'frame': frame_count,
-                                    'class': model.names[int(box.cls)],
-                                    'confidence': confidence,
-                                    'bbox': box.xyxy.tolist()[0]
+                                    'class': class_name,
+                                    'confidence': conf,
+                                    'bbox': bbox
                                 })
                                 
                                 # Draw on frame
-                                box_coords = box.xyxy[0].cpu().numpy()
-                                cv2.rectangle(
-                                    annotated_frame,
-                                    (int(box_coords[0]), int(box_coords[1])),
-                                    (int(box_coords[2]), int(box_coords[3])),
-                                    (0, 255, 0),
-                                    2
-                                )
-                                # Add label
-                                label = f"{model.names[int(box.cls)]} {confidence:.2f}"
-                                cv2.putText(
-                                    annotated_frame,
-                                    label,
-                                    (int(box_coords[0]), int(box_coords[1]-10)),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    0.5,
-                                    (0, 255, 0),
-                                    2
-                                )
+                                cv2.rectangle(annotated_frame, 
+                                            (int(bbox[0]), int(bbox[1])), 
+                                            (int(bbox[2]), int(bbox[3])), 
+                                            (0, 255, 0), 2)
+                                cv2.putText(annotated_frame, 
+                                          f'{class_name} {conf:.2f}',
+                                          (int(bbox[0]), int(bbox[1]-10)),
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
+                                          (0, 255, 0), 2)
                     
                     out.write(annotated_frame)
                     frame_count += 1
                 
                 cap.release()
                 out.release()
-                if len(results) > 0:  # Only add to processed files if detections were found
-                    processed_files.append(output_video_path)
-                
-                # Add validation frame samples
-                sample_frames = []
-                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                sample_indices = np.linspace(0, total_frames-1, 5, dtype=int)
-                
-                for frame_idx in sample_frames:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                    ret, frame = cap.read()
-                    if ret:
-                        prediction = model(frame)
-                        annotated_frame = frame.copy()
-                        # ... (annotation code)
-                        
-                        # Create validation image
-                        validation_img = draw_validation_image(
-                            frame, annotated_frame, 
-                            [{'class': model.names[int(box.cls)], 
-                              'confidence': float(box.conf)} 
-                             for box in prediction[0].boxes]
-                        )
-                        
-                        # Save validation frame
-                        validation_path = os.path.join(
-                            validation_dir, 
-                            f'validation_{file}_frame_{frame_idx}.jpg'
-                        )
-                        cv2.imwrite(validation_path, validation_img)
-                        processed_files.append(validation_path)
                 
             else:
                 # Process image
-                original_img = cv2.imread(file_path)
                 prediction = model(file_path)
-                annotated_img = original_img.copy()
+                img = cv2.imread(file_path)
+                annotated_img = img.copy()
                 
-                # Process predictions and draw annotations
-                # ... (previous annotation code)
+                # Process predictions
+                for pred in prediction:
+                    boxes = pred.boxes
+                    for box in boxes:
+                        conf = float(box.conf)
+                        if conf >= 0.6:  # Confidence threshold
+                            class_id = int(box.cls)
+                            class_name = model.names[class_id]
+                            bbox = box.xyxy.tolist()[0]
+                            
+                            # Add to results
+                            results.append({
+                                'filename': file,
+                                'class': class_name,
+                                'confidence': conf,
+                                'bbox': bbox
+                            })
+                            
+                            # Draw on image
+                            cv2.rectangle(annotated_img, 
+                                        (int(bbox[0]), int(bbox[1])), 
+                                        (int(bbox[2]), int(bbox[3])), 
+                                        (0, 255, 0), 2)
+                            cv2.putText(annotated_img, 
+                                      f'{class_name} {conf:.2f}',
+                                      (int(bbox[0]), int(bbox[1]-10)),
+                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
+                                      (0, 255, 0), 2)
                 
-                # Create validation image
-                validation_img = draw_validation_image(
-                    original_img, annotated_img,
-                    [{'class': model.names[int(box.cls)], 
-                      'confidence': float(box.conf)} 
-                     for box in prediction[0].boxes]
-                )
-                
-                # Save validation image
-                validation_path = os.path.join(
-                    validation_dir, 
-                    f'validation_{file}'
-                )
-                cv2.imwrite(validation_path, validation_img)
-                processed_files.append(validation_path)
+                # Save annotated image
+                output_path = os.path.join(annotated_dir, f'annotated_{file}')
+                cv2.imwrite(output_path, annotated_img)
         
-        # Create Excel file only if there are results
+        # Create Excel file
         if results:
             df = pd.DataFrame(results)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            excel_path = os.path.join(output_dir, f'test_results_{timestamp}.xlsx')
+            excel_path = os.path.join(results_dir, f'test_results_{timestamp}.xlsx')
+            df.to_excel(excel_path, index=False)
             
-            # Create detailed Excel report
-            with pd.ExcelWriter(excel_path, engine='xlsxwriter') as writer:
-                df.to_excel(writer, sheet_name='Detections', index=False)
-                
-                # Add summary sheet
-                summary = pd.DataFrame({
-                    'Total Files Processed': [len(test_files)],
-                    'Files with Detections': [len(set(df['filename']))],
-                    'Total Detections': [len(results)],
-                    'Average Confidence': [df['confidence'].mean()],
-                    'Classes Detected': [', '.join(df['class'].unique())]
-                })
-                summary.to_excel(writer, sheet_name='Summary', index=False)
+            # Create ZIP file
+            zip_path = os.path.join(app.static_folder, f'all_results_{timestamp}.zip')
+            with zipfile.ZipFile(zip_path, 'w') as zipf:
+                # Add Excel file
+                zipf.write(excel_path, os.path.basename(excel_path))
+                # Add annotated media
+                for root, _, files in os.walk(annotated_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.join('annotated', file)
+                        zipf.write(file_path, arcname)
             
-            processed_files.append(excel_path)
+            # Store the path for download
+            app.config['LATEST_RESULTS'] = zip_path
             
-            return jsonify({
-                'success': True,
-                'message': 'Testing completed',
-                'files': processed_files
-            })
+            # Clean up temporary files
+            shutil.rmtree(results_dir)
+            
+            return jsonify({'success': True, 'message': 'Testing completed'})
         else:
-            return jsonify({
-                'success': False,
-                'message': 'No confident detections found',
-                'files': []
-            })
+            return jsonify({'success': False, 'message': 'No detections above confidence threshold'})
         
     except Exception as e:
         print(f"Error in testing: {str(e)}")
@@ -877,6 +845,49 @@ def download_results():
     except Exception as e:
         print(f"Error downloading results: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/delete_project', methods=['POST'])
+def delete_project():
+    try:
+        # List of directories to clean
+        directories_to_clean = [
+            'runs',
+            'dataset',
+            'static/uploads',
+            'static/videos',
+            'static/output',
+            'static/verification',
+            'annotations',
+            'static/test'
+        ]
+        
+        # List of files to delete
+        files_to_delete = [
+            'labels.txt',
+            'data.yaml'
+        ]
+        
+        # Clean directories
+        for directory in directories_to_clean:
+            if os.path.exists(directory):
+                shutil.rmtree(directory)
+                os.makedirs(directory, exist_ok=True)
+        
+        # Delete individual files
+        for file in files_to_delete:
+            if os.path.exists(file):
+                os.remove(file)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Project data deleted successfully'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True, use_reloader=False)  # Disable reloader

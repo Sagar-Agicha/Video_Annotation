@@ -90,6 +90,9 @@ function initializeApp() {
 
     // Add download results button listener
     document.getElementById('downloadResults').addEventListener('click', downloadResults);
+
+    // Add this to your existing initializeApp function
+    document.getElementById('deleteProject').addEventListener('click', deleteProject);
 }
 
 async function uploadImages(e) {
@@ -1234,15 +1237,20 @@ async function startTesting() {
         
         const result = await response.json();
         
-        if (response.ok) {
+        if (response.ok && result.success) {
             showNotification('Testing completed successfully!', 'success');
-            downloadBtn.disabled = false;  // Enable download button after testing
+            downloadBtn.disabled = false;
         } else {
-            throw new Error(result.error || 'Testing failed to start');
+            const message = result.message || result.error || 'Testing failed to start';
+            showNotification(message, result.success ? 'info' : 'error');
+            if (!result.success) {
+                downloadBtn.disabled = true;
+            }
         }
     } catch (error) {
         console.error('Error starting testing:', error);
         showNotification('Error during testing: ' + error.message, 'error');
+        downloadBtn.disabled = true;
     }
 }
 
@@ -1281,5 +1289,30 @@ async function downloadResults() {
     } catch (error) {
         console.error('Error downloading results:', error);
         showNotification('Error downloading results: ' + error.message, 'error');
+    }
+}
+
+// Add this function
+async function deleteProject() {
+    if (confirm('Are you sure you want to delete all project data? This cannot be undone.')) {
+        try {
+            showNotification('Deleting project data...', 'info');
+            
+            const response = await fetch('/delete_project', {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showNotification('Project deleted successfully', 'success');
+                location.reload(); // Refresh the page to reset all states
+            } else {
+                throw new Error(result.error || 'Failed to delete project');
+            }
+        } catch (error) {
+            console.error('Error deleting project:', error);
+            showNotification('Error deleting project: ' + error.message, 'error');
+        }
     }
 }

@@ -1,4 +1,0 @@
-unknown
-company_name
-company_logo
-Intro
